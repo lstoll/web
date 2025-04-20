@@ -53,7 +53,8 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 
 		// Log the key/value being set for debugging
 		t.Logf("Setting session key=%s, value=%s", key, value)
-		mgr.Set(r.Context(), key, value)
+		sess := mgr.GetSession(r.Context())
+		sess.Set(key, value)
 	})
 
 	mux.HandleFunc("GET /get", func(w http.ResponseWriter, r *http.Request) {
@@ -66,9 +67,10 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 		sessCtx := r.Context().Value(mgrSessCtxKey{inst: mgr}).(*sessCtx)
 		t.Logf("Session data in context: %+v", sessCtx.data)
 
-		value, ok := mgr.Get(r.Context(), key).(string)
+		sess := mgr.GetSession(r.Context())
+		value, ok := sess.Get(key).(string)
 		if !ok {
-			t.Logf("Key %s not found in session or not a string: %v", key, mgr.Get(r.Context(), key))
+			t.Logf("Key %s not found in session or not a string: %v", key, sess.Get(key))
 			http.Error(w, "key not in session", http.StatusNotFound)
 			return
 		}
@@ -78,12 +80,14 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 
 	if testReset {
 		mux.HandleFunc("GET /reset", func(w http.ResponseWriter, r *http.Request) {
-			mgr.Reset(r.Context())
+			sess := mgr.GetSession(r.Context())
+			sess.Reset()
 		})
 	}
 
 	mux.HandleFunc("GET /clear", func(w http.ResponseWriter, r *http.Request) {
-		mgr.Delete(r.Context())
+		sess := mgr.GetSession(r.Context())
+		sess.Delete()
 	})
 
 	svr := httptest.NewTLSServer(mgr.Wrap(mux))

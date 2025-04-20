@@ -12,6 +12,79 @@ import (
 	"time"
 )
 
+// Session represents a user session with data access methods.
+type Session interface {
+	// Get returns the value for the given key from the session.
+	// If the key doesn't exist, it returns nil.
+	Get(key string) any
+
+	// GetAll returns the entire session data map.
+	GetAll() map[string]any
+
+	// Set sets a single key-value pair in the session and marks it to be saved.
+	Set(key string, value any)
+
+	// SetAll sets the entire session data map and marks it to be saved.
+	SetAll(data map[string]any)
+
+	// Delete marks the session for deletion at the end of the request.
+	Delete()
+
+	// Reset rotates the session ID to avoid session fixation.
+	Reset()
+
+	// HasFlash indicates if there is a flash message.
+	HasFlash() bool
+
+	// FlashIsError indicates that the flash message is an error.
+	FlashIsError() bool
+
+	// FlashMessage returns the current flash message.
+	FlashMessage() string
+}
+
+// sessionInstance implements the Session interface.
+type sessionInstance struct {
+	ctx context.Context
+	mgr *Manager
+}
+
+func (s *sessionInstance) Get(key string) any {
+	return s.mgr.get(s.ctx, key)
+}
+
+func (s *sessionInstance) GetAll() map[string]any {
+	return s.mgr.getAll(s.ctx)
+}
+
+func (s *sessionInstance) Set(key string, value any) {
+	s.mgr.set(s.ctx, key, value)
+}
+
+func (s *sessionInstance) SetAll(data map[string]any) {
+	s.mgr.setAll(s.ctx, data)
+}
+
+func (s *sessionInstance) Delete() {
+	s.mgr.delete(s.ctx)
+}
+
+func (s *sessionInstance) Reset() {
+	s.mgr.reset(s.ctx)
+}
+
+func (s *sessionInstance) HasFlash() bool {
+	return s.mgr.HasFlash(s.ctx)
+}
+
+func (s *sessionInstance) FlashIsError() bool {
+	return s.mgr.FlashIsError(s.ctx)
+}
+
+func (s *sessionInstance) FlashMessage() string {
+	return s.mgr.FlashMessage(s.ctx)
+}
+
 // sessionMetadata tracks additional information for the session manager to use,
 // alongside the session data itself.
 type sessionMetadata struct {
@@ -223,9 +296,16 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 	})
 }
 
-// Get returns the value for the given key from the session.
-// If the key doesn't exist, it returns nil.
-func (m *Manager) Get(ctx context.Context, key string) any {
+// GetSession returns a Session instance for the given context.
+func (m *Manager) GetSession(ctx context.Context) Session {
+	return &sessionInstance{
+		ctx: ctx,
+		mgr: m,
+	}
+}
+
+// internal get implementation
+func (m *Manager) get(ctx context.Context, key string) any {
 	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
 	if !ok {
 		panic("context contained no or invalid session")
@@ -234,8 +314,8 @@ func (m *Manager) Get(ctx context.Context, key string) any {
 	return sessCtx.data[key]
 }
 
-// GetAll returns the entire session data map
-func (m *Manager) GetAll(ctx context.Context) map[string]any {
+// internal getAll implementation
+func (m *Manager) getAll(ctx context.Context) map[string]any {
 	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
 	if !ok {
 		panic("context contained no or invalid session")
@@ -244,9 +324,8 @@ func (m *Manager) GetAll(ctx context.Context) map[string]any {
 	return sessCtx.data
 }
 
-// Set sets a single key-value pair in the session and marks it to be saved.
-// Special keys (starting with "__") are reserved for session metadata.
-func (m *Manager) Set(ctx context.Context, key string, value any) {
+// internal set implementation
+func (m *Manager) set(ctx context.Context, key string, value any) {
 	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
 	if !ok {
 		panic("context contained no or invalid session")
@@ -256,9 +335,8 @@ func (m *Manager) Set(ctx context.Context, key string, value any) {
 	sessCtx.data[key] = value
 }
 
-// SetAll sets the entire session data map and marks it to be saved.
-// Preserves session metadata.
-func (m *Manager) SetAll(ctx context.Context, data map[string]any) {
+// internal setAll implementation
+func (m *Manager) setAll(ctx context.Context, data map[string]any) {
 	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
 	if !ok {
 		panic("context contained no or invalid session")
@@ -274,9 +352,8 @@ func (m *Manager) SetAll(ctx context.Context, data map[string]any) {
 	setMetadata(sessCtx.data, md)
 }
 
-// Delete marks the session for deletion at the end of the request, and discards
-// the current session's data.
-func (m *Manager) Delete(ctx context.Context) {
+// internal delete implementation
+func (m *Manager) delete(ctx context.Context) {
 	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
 	if !ok {
 		panic("context contained no or invalid session")
@@ -288,10 +365,8 @@ func (m *Manager) Delete(ctx context.Context) {
 	sessCtx.reset = false
 }
 
-// Reset rotates the session ID. Used to avoid session fixation, should be
-// called on privilege elevation. This should be called at the end of a request.
-// For cookie-based storage, this is a no-op.
-func (m *Manager) Reset(ctx context.Context) {
+// internal reset implementation
+func (m *Manager) reset(ctx context.Context) {
 	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
 	if !ok {
 		panic("context contained no or invalid session")
@@ -537,4 +612,55 @@ type sessCtx struct {
 	delete bool
 	save   bool
 	reset  bool
+}
+
+// HasFlash indicates if there is a flash message
+func (m *Manager) HasFlash(ctx context.Context) bool {
+	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
+	if !ok {
+		return false
+	}
+	_, hasFlash := sessCtx.data["__flash"]
+	return hasFlash
+}
+
+// FlashIsError indicates that the flash message is an error.
+func (m *Manager) FlashIsError(ctx context.Context) bool {
+	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
+	if !ok {
+		return false
+	}
+	isErr, ok := sessCtx.data["__flash_is_error"]
+	if !ok {
+		return false
+	}
+	boolVal, ok := isErr.(bool)
+	if !ok {
+		return false
+	}
+	return boolVal
+}
+
+// FlashMessage returns the current flash message and clears it.
+func (m *Manager) FlashMessage(ctx context.Context) string {
+	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
+	if !ok {
+		return ""
+	}
+
+	flash, ok := sessCtx.data["__flash"]
+	if !ok {
+		return ""
+	}
+
+	// Clear the flash
+	delete(sessCtx.data, "__flash")
+	delete(sessCtx.data, "__flash_is_error")
+	sessCtx.save = true
+
+	str, ok := flash.(string)
+	if !ok {
+		return ""
+	}
+	return str
 }
