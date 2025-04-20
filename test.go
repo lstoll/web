@@ -10,9 +10,9 @@ import (
 	"github.com/lstoll/web/session"
 )
 
-func TestBrowserRequest(_ testing.TB, w *Server, r *http.Request, sess map[string]any) (context.Context, *BrowserRequest) {
+func TestBrowserRequest(_ testing.TB, w *Server, r *http.Request, sess map[string]any) (context.Context, *Request) {
 	ctx, _ := session.TestContext(w.Session(), r.Context(), sess)
-	return ctx, &BrowserRequest{
+	return ctx, &Request{
 		r: r.WithContext(ctx),
 		// TODO - do we ever need to expose the result? It's mainly used for
 		// fallback on middlewares.

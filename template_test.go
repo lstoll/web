@@ -48,10 +48,10 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 		t.Fatal(err)
 	}
 
-	svr.HandleBrowser("/test", svr.BrowserHandler(func(ctx context.Context, br *BrowserRequest) (BrowserResponse, error) {
-		return &TemplateResponse{
+	svr.HandleBrowser("/test", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(&TemplateResponse{
 			Name: "test",
-		}, nil
+		})
 	}))
 
 	tests := []struct {

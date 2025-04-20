@@ -37,21 +37,21 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svr.HandleBrowser("/test", svr.BrowserHandler(func(ctx context.Context, br *BrowserRequest) (BrowserResponse, error) {
-		return &TemplateResponse{
+	svr.HandleBrowser("/test", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(&TemplateResponse{
 			Name: "test",
 			Data: "world",
-		}, nil
+		})
 	}))
 
-	svr.HandleBrowser("/json", svr.BrowserHandler(func(ctx context.Context, br *BrowserRequest) (BrowserResponse, error) {
-		return &JSONResponse{
+	svr.HandleBrowser("/json", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(&JSONResponse{
 			Data: map[string]any{"hello": "world"},
-		}, nil
+		})
 	}))
 
-	svr.HandleBrowser("/err", svr.BrowserHandler(func(ctx context.Context, br *BrowserRequest) (BrowserResponse, error) {
-		return nil, errors.New("some error")
+	svr.HandleBrowser("/err", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return errors.New("some error")
 	}))
 
 	svr.HandleRaw("/raw", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

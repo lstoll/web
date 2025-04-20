@@ -1,14 +1,11 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -70,7 +67,7 @@ type Config struct {
 	Mux *http.ServeMux
 	// BrowserAuthMiddleware will be injected in to all Browser handled pages,
 	// to manage their auth.
-	BrowserAuthMiddleware func(h http.Handler, opts ...HandleOpt) BrowserHandler
+	BrowserAuthMiddleware func(h http.Handler, opts ...HandleOpt) BrowserHandlerFunc
 }
 
 func NewServer(c *Config) (*Server, error) {
@@ -110,16 +107,12 @@ type Server struct {
 	staticHandler *staticFileHandler
 }
 
-func (s *Server) SetAuthMiddleware(m func(h http.Handler, opts ...HandleOpt) BrowserHandler) {
+func (s *Server) SetAuthMiddleware(m func(h http.Handler, opts ...HandleOpt) BrowserHandlerFunc) {
 	s.config.BrowserAuthMiddleware = m
 }
 
 func (s *Server) Session() *session.Manager {
 	return s.config.SessionManager
-}
-
-func (s *Server) HandleRaw(pattern string, handler http.Handler) {
-	s.mux.Handle(pattern, s.baseWrappers(handler))
 }
 
 type HandleBrowserOpts struct {
@@ -183,70 +176,101 @@ func (s *Server) cspHandler(wrap http.Handler) http.Handler {
 	})
 }
 
-type BrowserHandler func(context.Context, *BrowserRequest) (BrowserResponse, error)
+func (s *Server) HandleRaw(pattern string, handler http.Handler) {
+	s.mux.Handle(pattern, s.baseWrappers(handler))
+}
+
+func (s *Server) Handle(pattern string, h http.Handler, opts ...HandleOpt) {
+	s.mux.Handle(pattern, s.buildBrowserMiddlewareStack(h, opts...))
+}
+
+func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *http.Request), opts ...HandleOpt) {
+	s.Handle(pattern, http.HandlerFunc(h))
+}
+
+type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error
+
+func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...HandleOpt) {
+	hh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Create request with server in context
+		ctx := WithServer(r.Context(), s)
+		r = r.WithContext(ctx)
+
+		// Create responsewriter and request
+		brw := NewResponseWriter(w, r, s)
+		br := &Request{rw: w, r: r}
+
+		if err := h(ctx, brw, br); err != nil {
+			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
+			return
+		}
+	})
+
+	s.Handle(pattern, hh, opts...)
+}
+
+func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...HandleOpt) http.Handler {
+	csrfh := nosurf.New(h)
+	csrfh.ExemptFunc(isRequestCSRFExempt)
+	csrfh.SetFailureHandler(http.HandlerFunc(s.csrfFailureHandler))
+	if slices.ContainsFunc(opts, func(o HandleOpt) bool {
+		_, ok := o.(HandleSkipCSRF)
+		return ok
+	}) {
+		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(contextWithCSRFExempt(r.Context()))
+			csrfh.ServeHTTP(w, r)
+		})
+	} else {
+		h = csrfh
+	}
+	prevh := h
+	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.config.BrowserAuthMiddleware != nil {
+			s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
+		} else {
+			prevh.ServeHTTP(w, r)
+		}
+	})
+	h = s.config.SessionManager.Wrap(h)
+	h = s.cspHandler(h)
+	h = cors.DenyPreflight(h)
+	h = s.baseWrappers(h)
+
+	return h
+}
 
 // BrowserHandler creates a new httpHandler from a higher-level abstraction,
 // targeted towards responding to browsers.
-func (s *Server) BrowserHandler(h BrowserHandler) http.Handler {
+func (s *Server) BrowserHandler(h BrowserHandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), fmt.Errorf("parsing form: %w", err))
 			return
 		}
-		br := &BrowserRequest{
+
+		// Create request with server in context
+		ctx := WithServer(r.Context(), s)
+		r = r.WithContext(ctx)
+
+		br := &Request{
 			rw: w,
 			r:  r,
 		}
 
-		resp, err := h(r.Context(), br)
+		// Create response writer
+		rw := NewResponseWriter(w, r, s)
+
+		// Call handler with response writer
+		err := h(ctx, rw, br)
 		if err != nil {
 			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
 			return
 		}
-
-		for _, c := range resp.getSettableCookies() {
-			http.SetCookie(w, c)
-		}
-
-		switch resp := resp.(type) {
-		case *TemplateResponse:
-			if resp.Templates == nil {
-				resp.Templates = s.config.Templates
-			}
-			t := resp.Templates.Funcs(s.buildFuncMap(r, resp.Funcs))
-			// we buffer the render, so we can capture errors better than
-			// blowing up halfway through the write.
-			var buf bytes.Buffer
-			err := t.ExecuteTemplate(&buf, resp.Name, resp.Data)
-			if err != nil {
-				s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
-				return
-			}
-			if _, err := io.Copy(w, &buf); err != nil {
-				s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
-				return
-			}
-		case *JSONResponse:
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(resp.Data); err != nil {
-				s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
-				return
-			}
-		case *NilResponse:
-			// do nothing, should be handled already
-		case *RedirectResponse:
-			code := resp.Code
-			if code == 0 {
-				code = http.StatusSeeOther
-			}
-			http.Redirect(w, r, resp.URL, code)
-		default:
-			panic(fmt.Sprintf("unhandled browser response type: %T", resp))
-		}
 	})
 }
 
-func (s *Server) VerifyCSRFToken(r *BrowserRequest, token string) bool {
+func (s *Server) VerifyCSRFToken(r *Request, token string) bool {
 	return nosurf.VerifyToken(nosurf.Token(r.r), token)
 }
 
