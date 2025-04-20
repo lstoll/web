@@ -65,8 +65,8 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 HasFlash: false
 FlashIsError: false
 FlashMessage:
-CRSFField: <input id="csrf_token" type="hidden" name="csrf_token" value="%s">
-CSRFToken: %s
+CRSFField: <input id="csrf_token" type="hidden" name="csrf_token" value="">
+CSRFToken:
 StaticPath: /static/subdir/file2.txt?sum=687830f0aa1e6225
 ScriptNonceAttr: %s
 `,
@@ -81,8 +81,8 @@ ScriptNonceAttr: %s
 		HasFlash: true
 		FlashIsError: true
 		FlashMessage: an error occurred
-		CRSFField: <input id="csrf_token" type="hidden" name="csrf_token" value="%s">
-		CSRFToken: %s
+		CRSFField: <input id="csrf_token" type="hidden" name="csrf_token" value="">
+		CSRFToken:
 		StaticPath: /static/subdir/file2.txt?sum=687830f0aa1e6225
 		ScriptNonceAttr: %s
 		`,
@@ -96,6 +96,10 @@ ScriptNonceAttr: %s
 			}
 
 			req := httptest.NewRequest("GET", "/test", nil)
+			// Add Sec-Fetch headers for our new protection
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			req.Header.Set("Sec-Fetch-Mode", "navigate")
+			req.Header.Set("Sec-Fetch-Dest", "document")
 
 			// ctx, _ := session.TestContext(sm, req.Context(), tt.session)
 			// req = req.WithContext(ctx)
@@ -107,23 +111,16 @@ ScriptNonceAttr: %s
 				t.Errorf("want status %d, got %d", http.StatusOK, rr.Code)
 			}
 
-			// extract the dynamically generated csrf string, and inject it in to the want.
-
-			re := regexp.MustCompile(`(?m)^CSRFToken:\s*(\S+)`)
+			// Now we only need to extract the script nonce
+			re := regexp.MustCompile(`(?m)^ScriptNonceAttr:\s*(\S+)`)
 			matches := re.FindStringSubmatch(rr.Body.String())
-			if len(matches) != 2 {
-				t.Fatal("could not find CSRF token value in response")
-			}
-			csrfToken := matches[1]
-
-			re = regexp.MustCompile(`(?m)^ScriptNonceAttr:\s*(\S+)`)
-			matches = re.FindStringSubmatch(rr.Body.String())
 			if len(matches) != 2 {
 				t.Fatal("could not find script nonce value in response")
 			}
 			scriptNonce := matches[1]
 
-			want := fmt.Sprintf(tt.want, csrfToken, csrfToken, scriptNonce)
+			// Only one formatting placeholder for the script nonce
+			want := fmt.Sprintf(tt.want, scriptNonce)
 
 			if diff := cmp.Diff(
 				strings.Split(cleanString(want), "\n"),

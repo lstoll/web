@@ -160,3 +160,20 @@ This middleware is designed for modern browsers that support Fetch Metadata head
 
 - [Fetch Metadata Request Headers](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers#fetch_metadata_request_headers)
 - [Protect your resources from web attacks with Fetch Metadata](https://web.dev/articles/fetch-metadata)
+
+
+## Testing
+
+When writing tests, be aware that the test client will need to include the appropriate Sec-Fetch headers:
+
+```go
+req := httptest.NewRequest("POST", "/submit", strings.NewReader("field=value"))
+req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+req.Header.Set("Sec-Fetch-Site", "same-origin")
+req.Header.Set("Sec-Fetch-Mode", "navigate")
+req.Header.Set("Sec-Fetch-Dest", "document")
+req.Header.Set("Sec-Fetch-User", "?1")  // Indicate user interaction
+
+w := httptest.NewRecorder()
+server.ServeHTTP(w, req)
+```

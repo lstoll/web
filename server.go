@@ -13,10 +13,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/justinas/nosurf"
 	"github.com/lstoll/web/cors"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/requestid"
+	"github.com/lstoll/web/secfetch"
 	"github.com/lstoll/web/session"
 )
 
@@ -130,20 +130,21 @@ type HandleSkipCSRF struct{}
 
 // HandleBrowser mounts a handler targeted at browser users at the given path
 func (s *Server) HandleBrowser(pattern string, h http.Handler, opts ...HandleOpt) {
-	csrfh := nosurf.New(h)
-	csrfh.ExemptFunc(isRequestCSRFExempt)
-	csrfh.SetFailureHandler(http.HandlerFunc(s.csrfFailureHandler))
-	if slices.ContainsFunc(opts, func(o HandleOpt) bool {
+	// Check if we should skip CSRF protection
+	skipCSRF := slices.ContainsFunc(opts, func(o HandleOpt) bool {
 		_, ok := o.(HandleSkipCSRF)
 		return ok
-	}) {
-		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r = r.WithContext(contextWithCSRFExempt(r.Context()))
-			csrfh.ServeHTTP(w, r)
-		})
+	})
+
+	// Apply secfetch protection
+	if skipCSRF {
+		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
+		h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
 	} else {
-		h = csrfh
+		// Standard protection
+		h = secfetch.Protect(h)
 	}
+
 	prevh := h
 	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.config.BrowserAuthMiddleware != nil {
@@ -210,20 +211,21 @@ func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ..
 }
 
 func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...HandleOpt) http.Handler {
-	csrfh := nosurf.New(h)
-	csrfh.ExemptFunc(isRequestCSRFExempt)
-	csrfh.SetFailureHandler(http.HandlerFunc(s.csrfFailureHandler))
-	if slices.ContainsFunc(opts, func(o HandleOpt) bool {
+	// Check if we should skip CSRF protection
+	skipCSRF := slices.ContainsFunc(opts, func(o HandleOpt) bool {
 		_, ok := o.(HandleSkipCSRF)
 		return ok
-	}) {
-		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r = r.WithContext(contextWithCSRFExempt(r.Context()))
-			csrfh.ServeHTTP(w, r)
-		})
+	})
+
+	// Apply secfetch protection
+	if skipCSRF {
+		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
+		h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
 	} else {
-		h = csrfh
+		// Standard protection
+		h = secfetch.Protect(h)
 	}
+
 	prevh := h
 	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.config.BrowserAuthMiddleware != nil {
@@ -270,8 +272,14 @@ func (s *Server) BrowserHandler(h BrowserHandlerFunc) http.Handler {
 	})
 }
 
+// VerifyCSRFToken is deprecated and always returns true since we've moved to Sec-Fetch headers
+// for CSRF protection. Existing code can continue using this method but it will have no effect.
+//
+// Deprecated: CSRF protection is now handled by Sec-Fetch headers via the secfetch package.
 func (s *Server) VerifyCSRFToken(r *Request, token string) bool {
-	return nosurf.VerifyToken(nosurf.Token(r.r), token)
+	// With secfetch, the CSRF verification happens at the middleware level
+	// based on the Sec-Fetch-* headers, so no token verification is needed.
+	return true
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

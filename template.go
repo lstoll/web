@@ -1,11 +1,8 @@
 package web
 
 import (
-	"fmt"
 	"html/template"
 	"net/http"
-
-	"github.com/justinas/nosurf"
 )
 
 // BaseFuncMap is a set of placeholder functions to use at parse time. These
@@ -13,8 +10,10 @@ import (
 // time.
 var BaseFuncMap = template.FuncMap{
 	// CSRFField writes out a HTML input field for the CSRF token
+	// Deprecated: CSRF protection is now handled automatically by Sec-Fetch headers
 	"CSRFField": func() template.HTML { panic("base func map should not be used") },
 	// CSRFToken returns the bare CSRF token, to manually construct submissions
+	// Deprecated: CSRF protection is now handled automatically by Sec-Fetch headers
 	"CSRFToken": func() string { panic("base func map should not be used") },
 	// HasFlash indicates if there is a flash value
 	"HasFlash": func() bool { panic("base func map should not be used") },
@@ -38,11 +37,15 @@ var BaseFuncMap = template.FuncMap{
 func (s *Server) buildFuncMap(r *http.Request, addlFuncs template.FuncMap) template.FuncMap {
 	// sess := s.config.SessionManager.Get(r.Context())
 	fm := map[string]any{
+		// Deprecated: CSRF protection is now handled automatically by Sec-Fetch headers
 		"CSRFField": func() template.HTML {
-			return template.HTML(fmt.Sprintf(`<input id="csrf_token" type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
+			// No actual CSRF token is needed anymore, but we return an empty field for compatibility
+			return template.HTML(`<input id="csrf_token" type="hidden" name="csrf_token" value="">`)
 		},
+		// Deprecated: CSRF protection is now handled automatically by Sec-Fetch headers
 		"CSRFToken": func() string {
-			return nosurf.Token(r)
+			// No actual CSRF token is needed anymore, but we return an empty string for compatibility
+			return ""
 		},
 		"HasFlash": func() bool {
 			// return sess.HasFlash() // TODO
