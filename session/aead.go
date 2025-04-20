@@ -36,6 +36,17 @@ func NewXChaPolyAEAD(encryptionKey []byte, additionalDecryptionKeys [][]byte) (A
 		if len(k) != chacha20poly1305.KeySize {
 			return nil, fmt.Errorf("keys must be %d bytes", chacha20poly1305.KeySize)
 		}
+		// Check if key is all zeros
+		isZero := true
+		for _, b := range k {
+			if b != 0 {
+				isZero = false
+				break
+			}
+		}
+		if isZero {
+			return nil, fmt.Errorf("keys cannot be all zeros")
+		}
 	}
 
 	return &xchaPolyAEAD{
