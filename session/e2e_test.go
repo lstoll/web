@@ -17,26 +17,16 @@ func TestE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieStore := &cookieStore{
-		AEAD:       aead,
-		cookieOpts: defaultCookieStoreCookieOpts,
-	}
-
-	kvStore, err := NewKVStore(&memoryKV{contents: make(map[string]kvItem)}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("KV Manager, JSON", func(t *testing.T) {
-		mgr, err := NewManager[jsonTestSession](kvStore, nil)
+	t.Run("KV Manager", func(t *testing.T) {
+		mgr, err := NewKVManager(&memoryKV{contents: make(map[string]kvItem)}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		runE2ETest(t, mgr, true)
 	})
 
-	t.Run("Cookie Manager, JSON", func(t *testing.T) {
-		mgr, err := NewManager[jsonTestSession](cookieStore, nil)
+	t.Run("Cookie Manager", func(t *testing.T) {
+		mgr, err := NewCookieManager(aead, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,29 +34,10 @@ func TestE2E(t *testing.T) {
 	})
 }
 
-type jsonTestSession struct {
-	KV map[string]string `json:"map"`
-}
-
-func (j *jsonTestSession) GetMap() map[string]string {
-	return j.KV
-}
-
-func (j *jsonTestSession) SetMap(m map[string]string) {
-	j.KV = m
-}
-
-type codecAccessor interface {
-	GetMap() map[string]string
-	SetMap(map[string]string)
-}
-
-func runE2ETest[PtrT codecAccessor](t testing.TB, mgr *Manager[PtrT], testReset bool) {
+func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /set", func(w http.ResponseWriter, r *http.Request) {
-		sess := mgr.Get(r.Context())
-
 		key := r.URL.Query().Get("key")
 		if key == "" {
 			http.Error(w, "query with no key", http.StatusInternalServerError)
@@ -80,27 +51,16 @@ func runE2ETest[PtrT codecAccessor](t testing.TB, mgr *Manager[PtrT], testReset 
 			return
 		}
 
-		m := sess.GetMap()
-		if m == nil {
-			m = make(map[string]string)
-		}
-
-		m[key] = value
-
-		sess.SetMap(m)
-
-		mgr.Save(r.Context(), sess)
+		mgr.Set(r.Context(), key, value)
 	})
 
 	mux.HandleFunc("GET /get", func(w http.ResponseWriter, r *http.Request) {
-		sess := mgr.Get(r.Context())
-
 		key := r.URL.Query().Get("key")
 		if key == "" {
 			t.Fatal("query with no key")
 		}
 
-		value, ok := sess.GetMap()[key]
+		value, ok := mgr.Get(r.Context(), key).(string)
 		if !ok {
 			http.Error(w, "key not in session", http.StatusNotFound)
 			return
@@ -111,8 +71,7 @@ func runE2ETest[PtrT codecAccessor](t testing.TB, mgr *Manager[PtrT], testReset 
 
 	if testReset {
 		mux.HandleFunc("GET /reset", func(w http.ResponseWriter, r *http.Request) {
-			sess := mgr.Get(r.Context())
-			mgr.Reset(r.Context(), sess)
+			mgr.Reset(r.Context())
 		})
 	}
 

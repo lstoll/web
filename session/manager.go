@@ -2,10 +2,8 @@ package session
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/base64"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,30 +29,6 @@ const (
 	StorageModeKV
 )
 
-// SessionManager defines the interface for session management
-type SessionManager interface {
-	// Wrap wraps an HTTP handler with session handling
-	Wrap(next http.Handler) http.Handler
-
-	// Get returns the value for the given key from the session
-	Get(ctx context.Context, key string) any
-
-	// GetAll returns the entire session data map
-	GetAll(ctx context.Context) map[string]any
-
-	// Set sets a single key-value pair in the session
-	Set(ctx context.Context, key string, value any)
-
-	// SetAll sets the entire session data map
-	SetAll(ctx context.Context, data map[string]any)
-
-	// Delete marks the session for deletion
-	Delete(ctx context.Context)
-
-	// Reset rotates the session ID
-	Reset(ctx context.Context)
-}
-
 // Manager handles both session data and storage.
 type Manager struct {
 	// Storage settings
@@ -72,8 +46,6 @@ type Manager struct {
 	codec          codec
 	opts           ManagerOpts
 }
-
-var _ SessionManager = (*Manager)(nil)
 
 var DefaultIdleTimeout = 24 * time.Hour
 
@@ -111,7 +83,7 @@ type ManagerOpts struct {
 }
 
 // NewCookieManager creates a new Manager that stores session data in cookies
-func NewCookieManager(aead AEAD, opts *ManagerOpts) (SessionManager, error) {
+func NewCookieManager(aead AEAD, opts *ManagerOpts) (*Manager, error) {
 	m := &Manager{
 		storageMode: StorageModeCookie,
 		aead:        aead,
@@ -143,7 +115,7 @@ func NewCookieManager(aead AEAD, opts *ManagerOpts) (SessionManager, error) {
 }
 
 // NewKVManager creates a new Manager that stores session data in a KV store
-func NewKVManager(kv KV, opts *ManagerOpts) (SessionManager, error) {
+func NewKVManager(kv KV, opts *ManagerOpts) (*Manager, error) {
 	m := &Manager{
 		storageMode: StorageModeKV,
 		kv:          kv,
@@ -359,76 +331,6 @@ func (m *Manager) loadSession(r *http.Request) ([]byte, error) {
 	}
 }
 
-// loadFromCookie extracts and decrypts session data from a cookie value
-func (m *Manager) loadFromCookie(cookieValue string) ([]byte, error) {
-	// Split and validate format
-	sp := strings.SplitN(cookieValue, ".", 2)
-	if len(sp) != 2 {
-		return nil, errors.New("cookie does not contain two . separated parts")
-	}
-
-	magic := sp[0]
-	encodedData := sp[1]
-
-	// Decode
-	decodedData, err := managerCookieValueEncoding.DecodeString(encodedData)
-	if err != nil {
-		return nil, fmt.Errorf("decoding cookie string: %w", err)
-	}
-
-	// Validate magic
-	if magic != managerCompressedCookieMagic && magic != managerCookieMagic {
-		return nil, fmt.Errorf("cookie has bad magic prefix: %s", magic)
-	}
-
-	// Decompress if needed
-	if magic == managerCompressedCookieMagic {
-		cr := getDecompressor()
-		defer putDecompressor(cr)
-		b, err := cr.Decompress(decodedData)
-		if err != nil {
-			return nil, fmt.Errorf("decompressing cookie: %w", err)
-		}
-		decodedData = b
-	}
-
-	// Decrypt using cookie name as associated data
-	decryptedData, err := m.aead.Decrypt(decodedData, []byte(m.cookieSettings.Name))
-	if err != nil {
-		return nil, fmt.Errorf("decrypting cookie: %w", err)
-	}
-
-	// Check expiry
-	if len(decryptedData) < 8 {
-		return nil, errors.New("decrypted data too short")
-	}
-	expiresAt := time.Unix(int64(binary.LittleEndian.Uint64(decryptedData[:8])), 0)
-	if expiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("cookie expired at %s", expiresAt)
-	}
-
-	// Return actual data (without expiry)
-	return decryptedData[8:], nil
-}
-
-// loadFromKV loads session data from the KV store using the ID from the cookie
-func (m *Manager) loadFromKV(ctx context.Context, sessionID string) ([]byte, error) {
-	// Hash the session ID for storage
-	storeKey := managerHashSessionID(sessionID)
-
-	// Get data from KV
-	data, found, err := m.kv.Get(ctx, storeKey)
-	if err != nil {
-		return nil, fmt.Errorf("getting from KV: %w", err)
-	}
-
-	if !found {
-		return nil, nil
-	}
-
-	return data, nil
-}
-
 func (m *Manager) saveHook(r *http.Request, sctx *sessCtx) func(w http.ResponseWriter) bool {
 	return func(w http.ResponseWriter) bool {
 		// Update the metadata timestamp
@@ -482,76 +384,6 @@ func (m *Manager) saveSession(w http.ResponseWriter, r *http.Request, sctx *sess
 	}
 }
 
-// saveToCookie saves session data directly to a cookie
-func (m *Manager) saveToCookie(w http.ResponseWriter, r *http.Request, expiresAt time.Time, data []byte) error {
-	// Add expiry time to data
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(expiresAt.Unix()))
-	dataWithExpiry := append(b, data...)
-
-	// Apply compression if needed
-	magic := managerCookieMagic
-	if !m.compressionDisabled && len(dataWithExpiry) > managerCompressThreshold {
-		cw := getCompressor()
-		defer putCompressor(cw)
-
-		b, err := cw.Compress(dataWithExpiry)
-		if err != nil {
-			return fmt.Errorf("compressing cookie: %w", err)
-		}
-		dataWithExpiry = b
-		magic = managerCompressedCookieMagic
-	}
-
-	// Encrypt data with AEAD
-	encryptedData, err := m.aead.Encrypt(dataWithExpiry, []byte(m.cookieSettings.Name))
-	if err != nil {
-		return fmt.Errorf("encrypting cookie failed: %w", err)
-	}
-
-	// Format cookie value
-	cookieValue := magic + "." + managerCookieValueEncoding.EncodeToString(encryptedData)
-	if len(cookieValue) > managerMaxCookieSize {
-		return fmt.Errorf("cookie size %d is greater than max %d", len(cookieValue), managerMaxCookieSize)
-	}
-
-	// Set cookie
-	cookie := m.cookieSettings.newCookie(expiresAt)
-	cookie.Value = cookieValue
-
-	managerRemoveCookieByName(w, cookie.Name)
-	http.SetCookie(w, cookie)
-
-	return nil
-}
-
-// saveToKV saves session data to the KV store and puts the ID in a cookie
-func (m *Manager) saveToKV(w http.ResponseWriter, r *http.Request, sctx *sessCtx, expiresAt time.Time, data []byte) error {
-	// Generate or get session ID
-	sessionID := getManagerSessionIDFromContext(r, m)
-	if sessionID == "" || sctx.reset {
-		sessionID = newSID()
-		setManagerSessionIDInContext(r, m, sessionID)
-	}
-
-	// Hash the session ID for storage
-	storeKey := managerHashSessionID(sessionID)
-
-	// Store in KV
-	if err := m.kv.Set(r.Context(), storeKey, expiresAt, data); err != nil {
-		return fmt.Errorf("storing in KV: %w", err)
-	}
-
-	// Set session ID cookie
-	cookie := m.cookieSettings.newCookie(expiresAt)
-	cookie.Value = sessionID
-
-	managerRemoveCookieByName(w, cookie.Name)
-	http.SetCookie(w, cookie)
-
-	return nil
-}
-
 // deleteSession deletes the session from the appropriate storage
 func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *sessCtx) error {
 	// Delete cookie regardless of storage mode
@@ -579,7 +411,7 @@ func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *se
 		}
 
 		// Generate a new ID for potential future use
-		setManagerSessionIDInContext(r, m, newSID())
+		setManagerSessionIDInContext(r, m, rand.Text())
 	}
 
 	return nil
@@ -692,13 +524,6 @@ func managerRemoveCookieByName(w http.ResponseWriter, cookieName string) {
 	for _, cookie := range updatedCookies {
 		headers.Add("Set-Cookie", cookie)
 	}
-}
-
-// Generate a consistent hash of session ID for KV storage
-func managerHashSessionID(id string) string {
-	h := sha256.New()
-	h.Write([]byte(id))
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 type mgrSessCtxKey struct{ inst *Manager }

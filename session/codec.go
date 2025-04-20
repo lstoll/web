@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// Session metadata keys with special prefix
+// Session metadata keys for persisting in the map
 const (
-	MetadataCreatedAt = "__createdAt"
-	MetadataUpdatedAt = "__updatedAt"
+	metadataCreatedAt = "__createdAt"
+	metadataUpdatedAt = "__updatedAt"
 )
 
 type codec interface {
@@ -36,9 +36,8 @@ func init() {
 
 func (g *gobCodec) Encode(data map[string]any) ([]byte, error) {
 	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
 
-	if err := enc.Encode(data); err != nil {
+	if err := gob.NewEncoder(&buf).Encode(data); err != nil {
 		return nil, fmt.Errorf("encoding session data: %w", err)
 	}
 
@@ -46,11 +45,8 @@ func (g *gobCodec) Encode(data map[string]any) ([]byte, error) {
 }
 
 func (g *gobCodec) Decode(data []byte) (map[string]any, error) {
-	buf := bytes.NewBuffer(data)
-	dec := gob.NewDecoder(buf)
-
 	var result map[string]any
-	if err := dec.Decode(&result); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding session data: %w", err)
 	}
 
@@ -61,11 +57,11 @@ func (g *gobCodec) Decode(data []byte) (map[string]any, error) {
 func extractMetadata(data map[string]any) *sessionMetadata {
 	var md sessionMetadata
 
-	if createdAt, ok := data[MetadataCreatedAt].(time.Time); ok {
+	if createdAt, ok := data[metadataCreatedAt].(time.Time); ok {
 		md.CreatedAt = createdAt
 	}
 
-	if updatedAt, ok := data[MetadataUpdatedAt].(time.Time); ok {
+	if updatedAt, ok := data[metadataUpdatedAt].(time.Time); ok {
 		md.UpdatedAt = updatedAt
 	}
 
@@ -74,6 +70,6 @@ func extractMetadata(data map[string]any) *sessionMetadata {
 
 // setMetadata stores the metadata in the session map
 func setMetadata(data map[string]any, md *sessionMetadata) {
-	data[MetadataCreatedAt] = md.CreatedAt
-	data[MetadataUpdatedAt] = md.UpdatedAt
+	data[metadataCreatedAt] = md.CreatedAt
+	data[metadataUpdatedAt] = md.UpdatedAt
 }
