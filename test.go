@@ -20,14 +20,6 @@ func TestBrowserRequest(_ testing.TB, w *Server, r *http.Request, sess map[strin
 	}
 }
 
-type testSessType struct{} // TODO kill
-
-func (s *testSessType) HasFlash() bool          { return false }
-func (s *testSessType) FlashIsError() bool      { return false }
-func (s *testSessType) FlashMessage() string    { return "" }
-func (s *testSessType) SaveFlash(m string)      {}
-func (s *testSessType) SaveErrorFlash(m string) {}
-
 // TestWebServer returns a web server instance configured with normal defaults
 // for this application
 func TestWebServer(t testing.TB, opt ...func(c *Config)) *Server {

@@ -6,8 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const requestIDLogKey = "requestid"
-
 type requestIDCtxKey struct{}
 
 // ContextWithRequestID adds the specified request ID to the context

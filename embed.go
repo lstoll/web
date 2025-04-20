@@ -15,11 +15,6 @@ type jsonErr struct {
 	Error string `json:"error"`
 }
 
-var sampleTemplateFunctionsStub = template.FuncMap(map[string]any{
-	"UserLoggedIn":    func() bool { panic("should not be called") },
-	"CurrentUserName": func() string { panic("should not be called") },
-})
-
 func SampleTemplateFunctions(smgr any) func(ctx context.Context) template.FuncMap {
 	// TODO - it would be nice to have a way to pass the session manager and
 	// other things in dynamically
