@@ -73,7 +73,7 @@ jobs:
       - name: Construct Database URLs
         run: |
           echo "WEB_TEST_POSTGRESQL_URL=postgres://test_user:test_password@localhost:5432/test_db" >> $GITHUB_ENV
-          echo "MYSQL_TEST_DATABASE_URL=test_user:test_password@tcp(localhost:3306)/test_db?tls=skip-verify" >> $GITHUB_ENV
+          echo "WEB_MYSQL_TEST_DATABASE_URL=test_user:test_password@tcp(localhost:3306)/test_db?tls=skip-verify" >> $GITHUB_ENV
 
       - name: Test
         run: |
