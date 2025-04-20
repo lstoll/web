@@ -17,7 +17,7 @@ func ForbiddenErrf(format string, args ...any) error {
 	}
 }
 
-// ErrBadRequest is a 401 error
+// ErrBadRequest is a 400 error
 type ErrBadRequest struct {
 	error
 }

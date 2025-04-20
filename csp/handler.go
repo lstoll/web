@@ -37,8 +37,7 @@ type HandlerOpt func(h *Handler)
 
 func ReportOnly(reportOnly bool) HandlerOpt {
 	return func(h *Handler) {
-		h.reportOnly = true
-	}
+		h.reportOnly = reportOnly
 }
 
 func DefaultSrc(src string) HandlerOpt {

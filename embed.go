@@ -36,9 +36,9 @@ func SampleTemplateFunctions(smgr any) func(ctx context.Context) template.FuncMa
 	}
 }
 
-// WithSamepleLayout takes the given template, and merges the layout template
+// WithSampleLayout takes the given template, and merges the layout template
 // items in to it.
-func WithSamepleLayout(t *template.Template) (*template.Template, error) {
+func WithSampleLayout(t *template.Template) (*template.Template, error) {
 	// kept as a demo for merging templates
 	templates := template.New("")
 	for _, it := range templates.Templates() {
