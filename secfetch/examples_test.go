@@ -9,7 +9,7 @@ import (
 func ExampleProtect() {
 	// Create a handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
+		_, _ = w.Write([]byte("Hello, World!"))
 	})
 
 	// Wrap with secfetch protection
@@ -22,7 +22,7 @@ func ExampleProtect() {
 func ExampleProtect_withOptions() {
 	// Create a handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("API response"))
+		_, _ = w.Write([]byte("API response"))
 	})
 
 	// Wrap with secfetch protection and custom options
@@ -43,7 +43,7 @@ func ExampleWebProtect() {
 
 	// Create a handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Protected with HandleOpt"))
+		_, _ = w.Write([]byte("Protected with HandleOpt"))
 	})
 
 	// Mock server.HandleBrowser with WebProtect
@@ -59,7 +59,7 @@ func ExampleWebProtect_withOptions() {
 
 	// Create a handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Protected with HandleOpt and options"))
+		_, _ = w.Write([]byte("Protected with HandleOpt and options"))
 	})
 
 	// Simulate passing options via HandleOpt

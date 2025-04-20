@@ -298,10 +298,6 @@ func (s *Server) baseWrappers(h http.Handler) http.Handler {
 	return hh
 }
 
-func (s *Server) csrfFailureHandler(w http.ResponseWriter, r *http.Request) {
-	s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), BadRequestErrf("CSRF validation failed"))
-}
-
 func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, _ *template.Template, err error) {
 	var forbiddenErr *ErrForbidden
 	if errors.As(err, &forbiddenErr) {
