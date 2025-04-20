@@ -9,10 +9,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 func TestE2E(t *testing.T) {
-	aead, err := newAESGCMAEAD(genAESKey(), nil)
+	aead, err := NewXChaPolyAEAD(genXChaPolyKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,17 +189,17 @@ func assertNoDuplicateCookies(t testing.TB, cookies []*http.Cookie) {
 	}
 }
 
+func genXChaPolyKey() []byte {
+	k := make([]byte, chacha20poly1305.KeySize)
+	if _, err := io.ReadFull(rand.Reader, k); err != nil {
+		panic(err)
+	}
+	return k
+}
+
 func must[T any](v T, err error) T {
 	if err != nil {
 		panic(fmt.Sprintf("error: %v", err))
 	}
 	return v
-}
-
-func genAESKey() []byte {
-	k := make([]byte, 16)
-	if _, err := io.ReadFull(rand.Reader, k); err != nil {
-		panic(err)
-	}
-	return k
 }

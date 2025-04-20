@@ -12,7 +12,7 @@ import (
 
 func TestCookieManager_RoundTrip(t *testing.T) {
 	// Create a new AEAD for testing
-	aead, err := newAESGCMAEAD(genAESKey(), nil)
+	aead, err := NewXChaPolyAEAD(genXChaPolyKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestCookieManager_RoundTrip(t *testing.T) {
 // TestCookieManager_ExtremelyLargeData tests that very large data causes an error
 func TestCookieManager_ExtremelyLargeData(t *testing.T) {
 	// Create a new AEAD for testing
-	aead, err := newAESGCMAEAD(genAESKey(), nil)
+	aead, err := NewXChaPolyAEAD(genXChaPolyKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestCookieManager_ExtremelyLargeData(t *testing.T) {
 // TestCookieManager_MultipleRoundTrips tests that data can be saved and loaded multiple times
 func TestCookieManager_MultipleRoundTrips(t *testing.T) {
 	// Create a new AEAD for testing
-	aead, err := newAESGCMAEAD(genAESKey(), nil)
+	aead, err := NewXChaPolyAEAD(genXChaPolyKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestCookieManager_MultipleRoundTrips(t *testing.T) {
 // TestCookieManager_CompressionLogic tests the compression logic specifically
 func TestCookieManager_CompressionLogic(t *testing.T) {
 	// Create a new AEAD for testing
-	aead, err := newAESGCMAEAD(genAESKey(), nil)
+	aead, err := NewXChaPolyAEAD(genXChaPolyKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestCookieManager_CompressionLogic(t *testing.T) {
 // TestCookieManager_MaxSize tests the cookie max size limit
 func TestCookieManager_MaxSize(t *testing.T) {
 	// Create a new AEAD for testing
-	aead, err := newAESGCMAEAD(genAESKey(), nil)
+	aead, err := NewXChaPolyAEAD(genXChaPolyKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
