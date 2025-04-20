@@ -133,3 +133,35 @@ func randStr(n int) string {
 	}
 	return string(b)
 }
+
+func TestCompressionRoundTrip(t *testing.T) {
+	// Get the pooled compressor
+	cw := getCompressor()
+	defer putCompressor(cw)
+
+	// Create test data - larger than threshold to ensure compression activates
+	data := bytes.Repeat([]byte("a"), managerCompressThreshold+100)
+
+	// Compress the data
+	compressed, err := cw.Compress(data)
+	if err != nil {
+		t.Fatalf("Error compressing data: %v", err)
+	}
+
+	t.Logf("Original size: %d, Compressed size: %d", len(data), len(compressed))
+
+	// Get the pooled decompressor
+	cr := getDecompressor()
+	defer putDecompressor(cr)
+
+	// Decompress the data
+	decompressed, err := cr.Decompress(compressed)
+	if err != nil {
+		t.Fatalf("Error decompressing data: %v", err)
+	}
+
+	// Verify that the data round-trips correctly
+	if !bytes.Equal(data, decompressed) {
+		t.Error("Data mismatch after compression round-trip")
+	}
+}

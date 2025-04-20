@@ -19,20 +19,20 @@ type sessionMetadata struct {
 	UpdatedAt time.Time
 }
 
-// StorageMode identifies the session storage mechanism
-type StorageMode int
+// storageMode identifies the session storage mechanism
+type storageMode int
 
 const (
-	// StorageModeCookie stores encrypted session data directly in cookies
-	StorageModeCookie StorageMode = iota
-	// StorageModeKV stores session data in a KV store and session ID in cookies
-	StorageModeKV
+	// storageModeCookie stores encrypted session data directly in cookies
+	storageModeCookie storageMode = iota
+	// storageModeKV stores session data in a KV store and session ID in cookies
+	storageModeKV
 )
 
 // Manager handles both session data and storage.
 type Manager struct {
 	// Storage settings
-	storageMode StorageMode
+	storageMode storageMode
 
 	// Cookie-mode settings
 	aead                AEAD
@@ -85,7 +85,7 @@ type ManagerOpts struct {
 // NewCookieManager creates a new Manager that stores session data in cookies
 func NewCookieManager(aead AEAD, opts *ManagerOpts) (*Manager, error) {
 	m := &Manager{
-		storageMode: StorageModeCookie,
+		storageMode: storageModeCookie,
 		aead:        aead,
 		opts: ManagerOpts{
 			IdleTimeout: DefaultIdleTimeout,
@@ -117,7 +117,7 @@ func NewCookieManager(aead AEAD, opts *ManagerOpts) (*Manager, error) {
 // NewKVManager creates a new Manager that stores session data in a KV store
 func NewKVManager(kv KV, opts *ManagerOpts) (*Manager, error) {
 	m := &Manager{
-		storageMode: StorageModeKV,
+		storageMode: storageModeKV,
 		kv:          kv,
 		opts: ManagerOpts{
 			IdleTimeout: DefaultIdleTimeout,
@@ -156,6 +156,7 @@ const (
 
 var managerCookieValueEncoding = base64.RawURLEncoding
 
+// Wrap creates middleware that handles session management for each request
 func (m *Manager) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := r.Context().Value(mgrSessCtxKey{inst: m}).(*sessCtx); ok {
@@ -180,30 +181,28 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 		// Load session data if it exists
 		data, err := m.loadSession(r)
 		if err != nil {
-			m.handleErr(w, r, err)
-			return
-		}
-
-		if data != nil {
-			// Decode the data directly into a map
+			// Log the error but don't fail the request - just start a new session
+			slog.WarnContext(r.Context(), "Failed to load session, starting a new one", "err", err)
+		} else if data != nil {
+			// Try to decode the data
 			decodedData, err := m.codec.Decode(data)
 			if err != nil {
-				m.handleErr(w, r, err)
-				return
-			}
+				// Log the error but don't fail the request - just start a new session
+				slog.WarnContext(r.Context(), "Failed to decode session data, starting a new one", "err", err)
+			} else {
+				sctx.data = decodedData
+				sctx.metadata = extractMetadata(decodedData)
 
-			sctx.data = decodedData
-			sctx.metadata = extractMetadata(decodedData)
+				// track the original data for idle timeout handling
+				if m.opts.IdleTimeout != 0 {
+					sctx.datab = data
+				}
 
-			// track the original data for idle timeout handling
-			if m.opts.IdleTimeout != 0 {
-				sctx.datab = data
-			}
-
-			if m.opts.Onload != nil {
-				sctx.data = m.opts.Onload(sctx.data)
-				// Update metadata in the map after potential modification
-				setMetadata(sctx.data, sctx.metadata)
+				if m.opts.Onload != nil {
+					sctx.data = m.opts.Onload(sctx.data)
+					// Update metadata in the map after potential modification
+					setMetadata(sctx.data, sctx.metadata)
+				}
 			}
 		}
 
@@ -322,9 +321,9 @@ func (m *Manager) loadSession(r *http.Request) ([]byte, error) {
 	}
 
 	switch m.storageMode {
-	case StorageModeCookie:
+	case storageModeCookie:
 		return m.loadFromCookie(cookie.Value)
-	case StorageModeKV:
+	case storageModeKV:
 		return m.loadFromKV(r.Context(), cookie.Value)
 	default:
 		return nil, fmt.Errorf("unknown storage mode: %v", m.storageMode)
@@ -375,9 +374,9 @@ func (m *Manager) saveSession(w http.ResponseWriter, r *http.Request, sctx *sess
 	expiresAt := m.calculateExpiry(sctx.metadata)
 
 	switch m.storageMode {
-	case StorageModeCookie:
+	case storageModeCookie:
 		return m.saveToCookie(w, r, expiresAt, data)
-	case StorageModeKV:
+	case storageModeKV:
 		return m.saveToKV(w, r, sctx, expiresAt, data)
 	default:
 		return fmt.Errorf("unknown storage mode: %v", m.storageMode)
@@ -393,7 +392,7 @@ func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *se
 	http.SetCookie(w, dc)
 
 	// For KV mode, also delete from KV store
-	if m.storageMode == StorageModeKV {
+	if m.storageMode == storageModeKV {
 		sessionID := getManagerSessionIDFromContext(r, m)
 		if sessionID == "" {
 			// Try to get from cookie
@@ -423,9 +422,9 @@ func (m *Manager) touchSession(w http.ResponseWriter, r *http.Request, sctx *ses
 	expiresAt := m.calculateExpiry(sctx.metadata)
 
 	switch m.storageMode {
-	case StorageModeCookie:
-		return m.saveToCookie(w, r, expiresAt, sctx.datab[8:])
-	case StorageModeKV:
+	case storageModeCookie:
+		return m.saveToCookie(w, r, expiresAt, sctx.datab)
+	case storageModeKV:
 		// Get session ID
 		sessionID := getManagerSessionIDFromContext(r, m)
 		if sessionID == "" {

@@ -45,12 +45,14 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 		}
 
 		value := r.URL.Query().Get("value")
-		if key == "" {
+		if value == "" {
 			t.Logf("query with no value")
 			http.Error(w, "query with no value", http.StatusInternalServerError)
 			return
 		}
 
+		// Log the key/value being set for debugging
+		t.Logf("Setting session key=%s, value=%s", key, value)
 		mgr.Set(r.Context(), key, value)
 	})
 
@@ -60,8 +62,13 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 			t.Fatal("query with no key")
 		}
 
+		// Log raw session data from context for debugging
+		sessCtx := r.Context().Value(mgrSessCtxKey{inst: mgr}).(*sessCtx)
+		t.Logf("Session data in context: %+v", sessCtx.data)
+
 		value, ok := mgr.Get(r.Context(), key).(string)
 		if !ok {
+			t.Logf("Key %s not found in session or not a string: %v", key, mgr.Get(r.Context(), key))
 			http.Error(w, "key not in session", http.StatusNotFound)
 			return
 		}
@@ -101,6 +108,8 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 		resp := doReq(t, client, svr.URL+fmt.Sprintf("/get?key=test%d", i), http.StatusOK)
 		if resp != fmt.Sprintf("value%d", i) {
 			t.Fatalf("wanted returned value value%d, got: %s", i, resp)
+		} else {
+			t.Logf("got value%d", i)
 		}
 	}
 
@@ -139,6 +148,9 @@ func doReq(t testing.TB, client *http.Client, url string, wantStatus int) string
 		t.Fatalf("creating request: %v", err)
 	}
 
+	// Log cookies being sent
+	t.Logf("Request cookies for %s: %v", url, req.Cookies())
+
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("error in request to %s: %v", url, err)
@@ -147,6 +159,10 @@ func doReq(t testing.TB, client *http.Client, url string, wantStatus int) string
 	if err != nil {
 		t.Fatalf("reading body: %v", err)
 	}
+
+	// Log response cookies
+	t.Logf("Response cookies from %s: %v", url, resp.Cookies())
+
 	if resp.StatusCode != wantStatus {
 		t.Logf("body: %s", string(bb))
 		t.Fatalf("non-%d response status: %d", wantStatus, resp.StatusCode)

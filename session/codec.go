@@ -32,6 +32,9 @@ func init() {
 	gob.Register(map[string]any{})
 	gob.Register([]interface{}{})
 	gob.Register(map[string]interface{}{})
+	gob.Register("")    // Register string type
+	gob.Register(0)     // Register int type
+	gob.Register(false) // Register bool type
 }
 
 func (g *gobCodec) Encode(data map[string]any) ([]byte, error) {
@@ -46,7 +49,9 @@ func (g *gobCodec) Encode(data map[string]any) ([]byte, error) {
 
 func (g *gobCodec) Decode(data []byte) (map[string]any, error) {
 	var result map[string]any
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&result); err != nil {
+
+	err := gob.NewDecoder(bytes.NewReader(data)).Decode(&result)
+	if err != nil {
 		return nil, fmt.Errorf("decoding session data: %w", err)
 	}
 
