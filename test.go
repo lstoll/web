@@ -10,7 +10,7 @@ import (
 	"github.com/lstoll/web/session"
 )
 
-func TestBrowserRequest[T Session](_ testing.TB, w *Server[T], r *http.Request, sess T) (context.Context, *BrowserRequest) {
+func TestBrowserRequest(_ testing.TB, w *Server, r *http.Request, sess map[string]any) (context.Context, *BrowserRequest) {
 	ctx, _ := session.TestContext(w.Session(), r.Context(), sess)
 	return ctx, &BrowserRequest{
 		r: r.WithContext(ctx),
@@ -30,16 +30,12 @@ func (s *testSessType) SaveErrorFlash(m string) {}
 
 // TestWebServer returns a web server instance configured with normal defaults
 // for this application
-func TestWebServer(t testing.TB, opt ...func(c *Config[*testSessType])) *Server[*testSessType] {
-	sstore, err := session.NewKVStore(session.NewMemoryKV(), nil)
+func TestWebServer(t testing.TB, opt ...func(c *Config)) *Server {
+	smgr, err := session.NewKVManager(session.NewMemoryKV(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	smgr, err := session.NewManager[*testSessType](sstore, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg := &Config[*testSessType]{
+	cfg := &Config{
 		BaseURL:        must(url.Parse("https://example.com")),
 		SessionManager: smgr,
 		Static:         nil, // TODO

@@ -9,33 +9,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/lstoll/web/session"
 )
 
-type testSession struct {
-	flashIsError bool
-	flashMessage string
-}
-
-func (s *testSession) HasFlash() bool          { return s.flashMessage != "" }
-func (s *testSession) FlashIsError() bool      { return s.flashIsError }
-func (s *testSession) FlashMessage() string    { return s.flashMessage }
-func (s *testSession) SaveFlash(m string)      {}
-func (s *testSession) SaveErrorFlash(m string) {}
-
 func TestServer(t *testing.T) {
 	base, _ := url.Parse("https://example.com")
 
-	skv, err := session.NewKVStore(session.NewMemoryKV(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sm, err := session.NewManager(skv, &session.ManagerOpts[*testSession]{
-		MaxLifetime: 1 * time.Hour,
-	})
+	sm, err := session.NewKVManager(session.NewMemoryKV(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +27,7 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svr, err := NewServer(&Config[*testSession]{
+	svr, err := NewServer(&Config{
 		BaseURL:        base,
 		SessionManager: sm,
 		Templates:      tmpl,

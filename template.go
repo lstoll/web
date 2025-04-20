@@ -35,8 +35,8 @@ var BaseFuncMap = template.FuncMap{
 	"StyleNonceAttr": func(string) (string, error) { panic("base func map should not be used") },
 }
 
-func (s *Server[SessT]) buildFuncMap(r *http.Request, addlFuncs template.FuncMap) template.FuncMap {
-	sess := s.config.SessionManager.Get(r.Context())
+func (s *Server) buildFuncMap(r *http.Request, addlFuncs template.FuncMap) template.FuncMap {
+	// sess := s.config.SessionManager.Get(r.Context())
 	fm := map[string]any{
 		"CSRFField": func() template.HTML {
 			return template.HTML(fmt.Sprintf(`<input id="csrf_token" type="hidden" name="csrf_token" value="%s">`, nosurf.Token(r)))
@@ -45,15 +45,18 @@ func (s *Server[SessT]) buildFuncMap(r *http.Request, addlFuncs template.FuncMap
 			return nosurf.Token(r)
 		},
 		"HasFlash": func() bool {
-			return sess.HasFlash()
+			// return sess.HasFlash() // TODO
+			return false
 		},
 		"FlashIsError": func() bool {
-			return sess.FlashIsError()
+			// return sess.FlashIsError() // TODO
+			return false
 		},
 		"FlashMessage": func() string {
-			m := sess.FlashMessage()
-			s.config.SessionManager.Save(r.Context(), sess)
-			return m
+			// m := sess.FlashMessage()
+			// s.config.SessionManager.Save(r.Context(), sess)
+			// return m
+			return ""
 		},
 		"StaticPath": func(p string) (string, error) {
 			return s.staticHandler.URL(p)

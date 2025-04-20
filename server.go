@@ -48,9 +48,9 @@ var DefaultCSPOpts = []csp.HandlerOpt{
 	csp.FrameAncestors(`'none'`),
 }
 
-type Config[SessT Session] struct {
+type Config struct {
 	BaseURL        *url.URL
-	SessionManager *session.Manager[SessT]
+	SessionManager *session.Manager
 	ErrorHandler   func(w http.ResponseWriter, r *http.Request, templates *template.Template, err error)
 	Templates      *template.Template
 	// TemplateFuncs are additional functions merged in to all template
@@ -73,7 +73,7 @@ type Config[SessT Session] struct {
 	BrowserAuthMiddleware func(h http.Handler, opts ...HandleOpt) BrowserHandler
 }
 
-func NewServer[SessT Session](c *Config[SessT]) (*Server[SessT], error) {
+func NewServer(c *Config) (*Server, error) {
 	if c.CSPOpts == nil {
 		c.CSPOpts = DefaultCSPOpts
 	}
@@ -91,7 +91,7 @@ func NewServer[SessT Session](c *Config[SessT]) (*Server[SessT], error) {
 		return nil, fmt.Errorf("creating static handler: %w", err)
 	}
 
-	svr := &Server[SessT]{
+	svr := &Server{
 		config:        c,
 		staticHandler: sh,
 		mux:           c.Mux,
@@ -104,21 +104,21 @@ func NewServer[SessT Session](c *Config[SessT]) (*Server[SessT], error) {
 	return svr, nil
 }
 
-type Server[SessT Session] struct {
-	config        *Config[SessT]
+type Server struct {
+	config        *Config
 	mux           *http.ServeMux
 	staticHandler *staticFileHandler
 }
 
-func (s *Server[SessT]) SetAuthMiddleware(m func(h http.Handler, opts ...HandleOpt) BrowserHandler) {
+func (s *Server) SetAuthMiddleware(m func(h http.Handler, opts ...HandleOpt) BrowserHandler) {
 	s.config.BrowserAuthMiddleware = m
 }
 
-func (s *Server[SessT]) Session() *session.Manager[SessT] {
+func (s *Server) Session() *session.Manager {
 	return s.config.SessionManager
 }
 
-func (s *Server[SessT]) HandleRaw(pattern string, handler http.Handler) {
+func (s *Server) HandleRaw(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, s.baseWrappers(handler))
 }
 
@@ -136,7 +136,7 @@ type HandleOpt interface{}
 type HandleSkipCSRF struct{}
 
 // HandleBrowser mounts a handler targeted at browser users at the given path
-func (s *Server[SessT]) HandleBrowser(pattern string, h http.Handler, opts ...HandleOpt) {
+func (s *Server) HandleBrowser(pattern string, h http.Handler, opts ...HandleOpt) {
 	csrfh := nosurf.New(h)
 	csrfh.ExemptFunc(isRequestCSRFExempt)
 	csrfh.SetFailureHandler(http.HandlerFunc(s.csrfFailureHandler))
@@ -166,7 +166,7 @@ func (s *Server[SessT]) HandleBrowser(pattern string, h http.Handler, opts ...Ha
 	s.mux.Handle(pattern, h)
 }
 
-func (s *Server[SessT]) cspHandler(wrap http.Handler) http.Handler {
+func (s *Server) cspHandler(wrap http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cspOpts := s.config.CSPOpts
 		if s.config.ScriptNonce {
@@ -187,7 +187,7 @@ type BrowserHandler func(context.Context, *BrowserRequest) (BrowserResponse, err
 
 // BrowserHandler creates a new httpHandler from a higher-level abstraction,
 // targeted towards responding to browsers.
-func (s *Server[SessT]) BrowserHandler(h BrowserHandler) http.Handler {
+func (s *Server) BrowserHandler(h BrowserHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), fmt.Errorf("parsing form: %w", err))
@@ -246,11 +246,11 @@ func (s *Server[SessT]) BrowserHandler(h BrowserHandler) http.Handler {
 	})
 }
 
-func (s *Server[SessT]) VerifyCSRFToken(r *BrowserRequest, token string) bool {
+func (s *Server) VerifyCSRFToken(r *BrowserRequest, token string) bool {
 	return nosurf.VerifyToken(nosurf.Token(r.r), token)
 }
 
-func (s *Server[SessT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, staticPrefix) {
 		s.staticHandler.ServeHTTP(w, r)
 		return
@@ -260,13 +260,13 @@ func (s *Server[SessT]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // baseWrappers installs the lowest-level handlers that all requests should
 // have, like logging etc.
-func (s *Server[SessT]) baseWrappers(h http.Handler) http.Handler {
+func (s *Server) baseWrappers(h http.Handler) http.Handler {
 	hh := loggingMiddleware(h)
 	hh = requestid.Handler(true, hh)
 	return hh
 }
 
-func (s *Server[SessT]) csrfFailureHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) csrfFailureHandler(w http.ResponseWriter, r *http.Request) {
 	s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), BadRequestErrf("CSRF validation failed"))
 }
 
