@@ -3,11 +3,9 @@ package web
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -161,8 +159,6 @@ func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *htt
 	s.Handle(pattern, http.HandlerFunc(h))
 }
 
-type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error
-
 func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...optshandler.HandlerOpt) {
 	hh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create request with server in context
@@ -170,8 +166,8 @@ func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ..
 		r = r.WithContext(ctx)
 
 		// Create responsewriter and request
-		brw := NewResponseWriter(w, r, s)
-		br := &Request{rw: w, r: r}
+		brw := newReseponseWriter(w, r, s)
+		br := &Request{r: r}
 
 		if err := h(ctx, brw, br); err != nil {
 			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
@@ -214,36 +210,6 @@ func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler
 	return h
 }
 
-// BrowserHandler creates a new httpHandler from a higher-level abstraction,
-// targeted towards responding to browsers.
-func (s *Server) BrowserHandler(h BrowserHandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), fmt.Errorf("parsing form: %w", err))
-			return
-		}
-
-		// Create request with server in context
-		ctx := WithServer(r.Context(), s)
-		r = r.WithContext(ctx)
-
-		br := &Request{
-			rw: w,
-			r:  r,
-		}
-
-		// Create response writer
-		rw := NewResponseWriter(w, r, s)
-
-		// Call handler with response writer
-		err := h(ctx, rw, br)
-		if err != nil {
-			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
-			return
-		}
-	})
-}
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO - we need to split this out to check if there's an opts handler, and if
 	// so add those opts to the context.
@@ -276,9 +242,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// add base middleware and serve
 
+	rw := newReseponseWriter(w, r, s)
+
 	// building the chain per request may be a bit expensive. we should
 	// benchmark it first, if it's a problem consider caching/other methods.
-	buildMiddlewareChain(middleware)(h).ServeHTTP(w, r)
+	buildMiddlewareChain(middleware)(h).ServeHTTP(rw, r)
 }
 
 // baseWrappers installs the lowest-level handlers that all requests should
@@ -287,21 +255,6 @@ func (s *Server) baseWrappers(h http.Handler) http.Handler {
 	hh := loggingMiddleware(h)
 	hh = requestid.Handler(true, hh)
 	return hh
-}
-
-func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, _ *template.Template, err error) {
-	var forbiddenErr *ErrForbidden
-	if errors.As(err, &forbiddenErr) {
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
-		return
-	}
-	var badReqERR *ErrBadRequest
-	if errors.As(err, &badReqERR) {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
-	slog.ErrorContext(r.Context(), "internal error in web handler", "err", err)
-	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
 
 func buildMiddlewareChain(chain []func(http.Handler) http.Handler) func(http.Handler) http.Handler {

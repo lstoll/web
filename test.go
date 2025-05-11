@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -14,9 +13,6 @@ func TestBrowserRequest(_ testing.TB, w *Server, r *http.Request, sess map[strin
 	ctx, _ := session.TestContext(w.Session(), r.Context(), sess)
 	return ctx, &Request{
 		r: r.WithContext(ctx),
-		// TODO - do we ever need to expose the result? It's mainly used for
-		// fallback on middlewares.
-		rw: httptest.NewRecorder(),
 	}
 }
 

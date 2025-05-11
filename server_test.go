@@ -37,20 +37,20 @@ func TestServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svr.HandleBrowser("/test", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
 		return rw.WriteResponse(&TemplateResponse{
 			Name: "test",
 			Data: "world",
 		})
 	}))
 
-	svr.HandleBrowser("/json", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+	svr.Handle("/json", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
 		return rw.WriteResponse(&JSONResponse{
 			Data: map[string]any{"hello": "world"},
 		})
 	}))
 
-	svr.HandleBrowser("/err", svr.BrowserHandler(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+	svr.Handle("/err", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
 		return errors.New("some error")
 	}))
 

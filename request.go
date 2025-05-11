@@ -11,8 +11,7 @@ import (
 )
 
 type Request struct {
-	rw http.ResponseWriter
-	r  *http.Request
+	r *http.Request
 }
 
 // Session returns the session associated with this request.
@@ -76,30 +75,4 @@ func (b *Request) DecodeForm(target any) error {
 // extending the BrowserRequest, or document why it is needed.
 func (b *Request) RawRequest() *http.Request {
 	return b.r
-}
-
-// RawResponseWriter returns the raw http.ResponseWriter underlying this
-// request. If this is written to, a NilResponse should be returned from the
-// handler.
-//
-// Deprecated: This should only be used in exceptional circumstances. Prefer
-// extending the BrowserRequest, or document why it is needed.
-func (b *Request) RawResponseWriter() http.ResponseWriter {
-	return b.rw
-}
-
-// ResponseWriter returns a ResponseWriter for this request.
-// This is a convenience method that creates a new ResponseWriter using the server
-// from the context.
-func (b *Request) ResponseWriter() ResponseWriter {
-	ctx := b.r.Context()
-	if srv, ok := ctx.Value(serverContextKey).(*Server); ok {
-		return NewResponseWriter(b.rw, b.r, srv)
-	}
-
-	// Fallback to a responseWriter without server reference
-	return &responseWriter{
-		rw: b.rw,
-		r:  b.r,
-	}
 }

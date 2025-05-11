@@ -19,25 +19,25 @@ func WithServer(ctx context.Context, server *Server) context.Context {
 	return context.WithValue(ctx, serverContextKey, server)
 }
 
-// NewResponseWriter creates a new ResponseWriter
-func NewResponseWriter(w http.ResponseWriter, r *http.Request, s *Server) ResponseWriter {
+// newReseponseWriter creates a new ResponseWriter
+func newReseponseWriter(w http.ResponseWriter, r *http.Request, s *Server) ResponseWriter {
 	return &responseWriter{
-		rw:     w,
-		r:      r,
-		server: s,
+		ResponseWriter: w,
+		r:              r,
+		server:         s,
 	}
 }
 
 type ResponseWriter interface {
+	http.ResponseWriter
 	WriteError(err error) error
 	WriteResponse(resp BrowserResponse) error
-	HTTPResponseWriter() http.ResponseWriter
 }
 
 var _ ResponseWriter = (*responseWriter)(nil)
 
 type responseWriter struct {
-	rw      http.ResponseWriter
+	http.ResponseWriter
 	r       *http.Request
 	server  *Server
 	handled bool
@@ -51,7 +51,7 @@ func (w *responseWriter) WriteResponse(resp BrowserResponse) error {
 
 	// Set any cookies from the response
 	for _, c := range resp.getSettableCookies() {
-		http.SetCookie(w.rw, c)
+		http.SetCookie(w, c)
 	}
 
 	// Handle different response types
@@ -71,17 +71,12 @@ func (w *responseWriter) WriteResponse(resp BrowserResponse) error {
 }
 
 func (w *responseWriter) writeTemplateResponse(resp *TemplateResponse) error {
-	server := w.serverFromContext()
-	if server == nil {
-		return fmt.Errorf("server not found in context")
-	}
-
 	templates := resp.Templates
 	if templates == nil {
-		templates = server.config.Templates
+		templates = w.server.config.Templates
 	}
 
-	t := templates.Funcs(server.buildFuncMap(w.r, resp.Funcs))
+	t := templates.Funcs(w.server.buildFuncMap(w.r, resp.Funcs))
 
 	// Buffer the render to capture errors before writing
 	var buf bytes.Buffer
@@ -90,13 +85,13 @@ func (w *responseWriter) writeTemplateResponse(resp *TemplateResponse) error {
 		return err
 	}
 
-	_, err = io.Copy(w.rw, &buf)
+	_, err = io.Copy(w, &buf)
 	return err
 }
 
 func (w *responseWriter) writeJSONResponse(resp *JSONResponse) error {
-	w.rw.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w.rw).Encode(resp.Data)
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp.Data)
 }
 
 func (w *responseWriter) writeRedirectResponse(resp *RedirectResponse) error {
@@ -104,7 +99,7 @@ func (w *responseWriter) writeRedirectResponse(resp *RedirectResponse) error {
 	if code == 0 {
 		code = http.StatusSeeOther
 	}
-	http.Redirect(w.rw, w.r, resp.URL, code)
+	http.Redirect(w, w.r, resp.URL, code)
 	return nil
 }
 
@@ -117,16 +112,12 @@ func (w *responseWriter) WriteError(err error) error {
 	server := w.serverFromContext()
 	if server == nil {
 		// Fallback to a basic error handler if we can't get the server
-		http.Error(w.rw, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
 
-	server.config.ErrorHandler(w.rw, w.r, server.config.Templates.Funcs(server.buildFuncMap(w.r, nil)), err)
+	server.config.ErrorHandler(w, w.r, server.config.Templates.Funcs(server.buildFuncMap(w.r, nil)), err)
 	return nil
-}
-
-func (w *responseWriter) HTTPResponseWriter() http.ResponseWriter {
-	return w.rw
 }
 
 func (w *responseWriter) serverFromContext() *Server {

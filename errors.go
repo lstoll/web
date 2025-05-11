@@ -52,3 +52,11 @@ func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, _ *template.Tem
 	slog.ErrorContext(r.Context(), "internal error in web handler", "err", err)
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
+
+type errHandlerReponseWriter struct {
+	http.ResponseWriter
+}
+
+func (e *errHandlerReponseWriter) WriteHeader(status int) {
+
+}
