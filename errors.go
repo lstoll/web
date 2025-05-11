@@ -1,6 +1,12 @@
 package web
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"html/template"
+	"log/slog"
+	"net/http"
+)
 
 // ErrForbidden is a 403 error
 type ErrForbidden struct {
@@ -30,4 +36,19 @@ func BadRequestErrf(format string, args ...any) error {
 	return &ErrBadRequest{
 		error: fmt.Errorf(format, args...),
 	}
+}
+
+func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, _ *template.Template, err error) {
+	var forbiddenErr *ErrForbidden
+	if errors.As(err, &forbiddenErr) {
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
+	var badReqERR *ErrBadRequest
+	if errors.As(err, &badReqERR) {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	slog.ErrorContext(r.Context(), "internal error in web handler", "err", err)
+	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }

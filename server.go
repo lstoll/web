@@ -15,6 +15,7 @@ import (
 
 	"github.com/lstoll/web/cors"
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/optshandler"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/secfetch"
 	"github.com/lstoll/web/session"
@@ -65,9 +66,9 @@ type Config struct {
 	// Mux that handlers will mount on. If nil, a new mux will be created. If an
 	// existing mux is passed, a handler for the static content will be added.
 	Mux *http.ServeMux
-	// BrowserAuthMiddleware will be injected in to all Browser handled pages,
-	// to manage their auth.
-	BrowserAuthMiddleware func(h http.Handler, opts ...HandleOpt) BrowserHandlerFunc
+	// AdditionalBrowserMiddleware is a set of middleware that will be added to
+	// all browser handlers, after the base middleware.
+	AdditionalBrowserMiddleware []func(http.Handler) http.Handler
 }
 
 func NewServer(c *Config) (*Server, error) {
@@ -92,6 +93,13 @@ func NewServer(c *Config) (*Server, error) {
 		config:        c,
 		staticHandler: sh,
 		mux:           c.Mux,
+		baseMiddleware: []func(http.Handler) http.Handler{
+			loggingMiddleware,
+			func(h http.Handler) http.Handler {
+				// TODO - make requestID be a normal middleware
+				return requestid.Handler(true, h)
+			},
+		},
 	}
 
 	if mountStatic {
@@ -105,10 +113,8 @@ type Server struct {
 	config        *Config
 	mux           *http.ServeMux
 	staticHandler *staticFileHandler
-}
 
-func (s *Server) SetAuthMiddleware(m func(h http.Handler, opts ...HandleOpt) BrowserHandlerFunc) {
-	s.config.BrowserAuthMiddleware = m
+	baseMiddleware []func(http.Handler) http.Handler
 }
 
 func (s *Server) Session() *session.Manager {
@@ -119,46 +125,12 @@ type HandleBrowserOpts struct {
 	SkipCSRF bool
 }
 
-type HandleOpt interface{}
-
 // HandleSkipCSRF is an opt that can be passed to a HandleBrowser to skip CSRF
 // protection.
 //
 // Deprecated: CSRF should always be passed via form or header for relevant
 // actions. Exceptions should be documented.
 type HandleSkipCSRF struct{}
-
-// HandleBrowser mounts a handler targeted at browser users at the given path
-func (s *Server) HandleBrowser(pattern string, h http.Handler, opts ...HandleOpt) {
-	// Check if we should skip CSRF protection
-	skipCSRF := slices.ContainsFunc(opts, func(o HandleOpt) bool {
-		_, ok := o.(HandleSkipCSRF)
-		return ok
-	})
-
-	// Apply secfetch protection
-	if skipCSRF {
-		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
-		h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
-	} else {
-		// Standard protection
-		h = secfetch.Protect(h)
-	}
-
-	prevh := h
-	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.config.BrowserAuthMiddleware != nil {
-			s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
-		} else {
-			prevh.ServeHTTP(w, r)
-		}
-	})
-	h = s.config.SessionManager.Wrap(h)
-	h = s.cspHandler(h)
-	h = cors.DenyPreflight(h)
-	h = s.baseWrappers(h)
-	s.mux.Handle(pattern, h)
-}
 
 func (s *Server) cspHandler(wrap http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,17 +153,17 @@ func (s *Server) HandleRaw(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, s.baseWrappers(handler))
 }
 
-func (s *Server) Handle(pattern string, h http.Handler, opts ...HandleOpt) {
+func (s *Server) Handle(pattern string, h http.Handler, opts ...optshandler.HandlerOpt) {
 	s.mux.Handle(pattern, s.buildBrowserMiddlewareStack(h, opts...))
 }
 
-func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *http.Request), opts ...HandleOpt) {
+func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *http.Request), opts ...optshandler.HandlerOpt) {
 	s.Handle(pattern, http.HandlerFunc(h))
 }
 
 type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error
 
-func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...HandleOpt) {
+func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...optshandler.HandlerOpt) {
 	hh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create request with server in context
 		ctx := WithServer(r.Context(), s)
@@ -210,9 +182,9 @@ func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ..
 	s.Handle(pattern, hh, opts...)
 }
 
-func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...HandleOpt) http.Handler {
+func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler.HandlerOpt) http.Handler {
 	// Check if we should skip CSRF protection
-	skipCSRF := slices.ContainsFunc(opts, func(o HandleOpt) bool {
+	skipCSRF := slices.ContainsFunc(opts, func(o optshandler.HandlerOpt) bool {
 		_, ok := o.(HandleSkipCSRF)
 		return ok
 	})
@@ -226,14 +198,14 @@ func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...HandleOpt) 
 		h = secfetch.Protect(h)
 	}
 
-	prevh := h
-	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.config.BrowserAuthMiddleware != nil {
-			s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
-		} else {
-			prevh.ServeHTTP(w, r)
-		}
-	})
+	// prevh := h
+	// h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 	if s.config.BrowserAuthMiddleware != nil {
+	// 		s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
+	// 	} else {
+	// 		prevh.ServeHTTP(w, r)
+	// 	}
+	// })
 	h = s.config.SessionManager.Wrap(h)
 	h = s.cspHandler(h)
 	h = cors.DenyPreflight(h)
@@ -272,22 +244,41 @@ func (s *Server) BrowserHandler(h BrowserHandlerFunc) http.Handler {
 	})
 }
 
-// VerifyCSRFToken is deprecated and always returns true since we've moved to Sec-Fetch headers
-// for CSRF protection. Existing code can continue using this method but it will have no effect.
-//
-// Deprecated: CSRF protection is now handled by Sec-Fetch headers via the secfetch package.
-func (s *Server) VerifyCSRFToken(r *Request, token string) bool {
-	// With secfetch, the CSRF verification happens at the middleware level
-	// based on the Sec-Fetch-* headers, so no token verification is needed.
-	return true
-}
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO - we need to split this out to check if there's an opts handler, and if
+	// so add those opts to the context.
+	// also need to consider the split of base middleware that is used for everything,
+	// and things like auth that static and error handlers don't need.
+	middleware := s.baseMiddleware
+
 	if strings.HasPrefix(r.URL.Path, staticPrefix) {
+		// add base middleware and serve
 		s.staticHandler.ServeHTTP(w, r)
 		return
 	}
-	s.mux.ServeHTTP(w, r)
+	h, pattern := s.mux.Handler(r)
+	if pattern == "" {
+		// TODO use error handler
+		http.NotFound(w, r)
+		return
+	}
+	if optsHandler, ok := h.(optshandler.OptsHandler); ok {
+		r = r.WithContext(optshandler.ContextWithHandlerOpts(r.Context(), optsHandler.HandleOpts()...))
+	}
+
+	// TODO - how do we build the middleware exactly? interate through that and
+	// do the wrapping.
+
+	// Do we get a performance gain by having a base serve http thing, rather than building
+	// the stack each time?
+
+	// Add additional middleware, e.g auth
+
+	// add base middleware and serve
+
+	// building the chain per request may be a bit expensive. we should
+	// benchmark it first, if it's a problem consider caching/other methods.
+	buildMiddlewareChain(middleware)(h).ServeHTTP(w, r)
 }
 
 // baseWrappers installs the lowest-level handlers that all requests should
@@ -311,4 +302,13 @@ func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, _ *template.Tem
 	}
 	slog.ErrorContext(r.Context(), "internal error in web handler", "err", err)
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+}
+
+func buildMiddlewareChain(chain []func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		for i := len(chain) - 1; i >= 0; i-- {
+			h = chain[i](h)
+		}
+		return h
+	}
 }
