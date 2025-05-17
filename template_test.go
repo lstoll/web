@@ -40,9 +40,9 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 	svr, err := NewServer(&Config{
 		BaseURL:        base,
 		SessionManager: sm,
-		Templates:      tmpl,
-		Static:         testfs,
-		ScriptNonce:    true,
+		// Templates:      tmpl,
+		Static:      testfs,
+		ScriptNonce: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,8 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 
 	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
 		return rw.WriteResponse(&TemplateResponse{
-			Name: "test",
+			Templates: tmpl,
+			Name:      "test",
 		})
 	}))
 

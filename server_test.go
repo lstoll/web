@@ -30,7 +30,6 @@ func TestServer(t *testing.T) {
 	svr, err := NewServer(&Config{
 		BaseURL:        base,
 		SessionManager: sm,
-		Templates:      tmpl,
 		Static:         testfs,
 	})
 	if err != nil {

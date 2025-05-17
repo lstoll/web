@@ -71,12 +71,7 @@ func (w *responseWriter) WriteResponse(resp BrowserResponse) error {
 }
 
 func (w *responseWriter) writeTemplateResponse(resp *TemplateResponse) error {
-	templates := resp.Templates
-	if templates == nil {
-		templates = w.server.config.Templates
-	}
-
-	t := templates.Funcs(w.server.buildFuncMap(w.r, resp.Funcs))
+	t := resp.Templates.Funcs(w.server.buildFuncMap(w.r, resp.Funcs))
 
 	// Buffer the render to capture errors before writing
 	var buf bytes.Buffer
@@ -116,7 +111,7 @@ func (w *responseWriter) WriteError(err error) error {
 		return nil
 	}
 
-	server.config.ErrorHandler(w, w.r, server.config.Templates.Funcs(server.buildFuncMap(w.r, nil)), err)
+	server.config.ErrorHandler(w, w.r, -1, err) // TODO - get code
 	return nil
 }
 

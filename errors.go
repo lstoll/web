@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 )
@@ -38,7 +37,7 @@ func BadRequestErrf(format string, args ...any) error {
 	}
 }
 
-func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, _ *template.Template, err error) {
+func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, code int, err error) {
 	var forbiddenErr *ErrForbidden
 	if errors.As(err, &forbiddenErr) {
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)

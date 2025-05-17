@@ -1,10 +1,8 @@
 package web
 
 import (
-	"context"
 	"crypto/rand"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -48,14 +46,9 @@ func NoopHandler(h http.Handler) http.Handler {
 type Config struct {
 	BaseURL        *url.URL
 	SessionManager *session.Manager
-	ErrorHandler   func(w http.ResponseWriter, r *http.Request, templates *template.Template, err error)
-	Templates      *template.Template
-	// TemplateFuncs are additional functions merged in to all template
-	// invocations. For each request, this will be called with the request's
-	// context, and the returned functions merged in.
-	TemplateFuncs func(ctx context.Context) template.FuncMap
-	Static        fs.FS
-	CSPOpts       []csp.HandlerOpt
+	ErrorHandler   func(w http.ResponseWriter, r *http.Request, code int, err error)
+	Static         fs.FS
+	CSPOpts        []csp.HandlerOpt
 	// ScriptNonce indicates that a nonce should be used for inline scripts.
 	// This will update the CSP, and the template func will return a value.
 	ScriptNonce bool
