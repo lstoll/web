@@ -8,13 +8,9 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"slices"
-	"strings"
 
 	"filippo.io/csrf"
-	"github.com/lstoll/web/cors"
 	"github.com/lstoll/web/csp"
-	"github.com/lstoll/web/optshandler"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
 )
@@ -174,87 +170,78 @@ func (s *Server) cspHandler(wrap http.Handler) http.Handler {
 }
 
 func (s *Server) HandleRaw(pattern string, handler http.Handler) {
-	s.mux.Handle(pattern, s.baseWrappers(handler))
+	s.mux.Handle(pattern, s.invokeWithBaseMiddleware(handler))
 }
 
-func (s *Server) Handle(pattern string, h http.Handler, opts ...optshandler.HandlerOpt) {
-	s.mux.Handle(pattern, s.buildBrowserMiddlewareStack(h, opts...))
-}
-
-func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *http.Request), opts ...optshandler.HandlerOpt) {
-	s.Handle(pattern, http.HandlerFunc(h))
-}
-
-func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...optshandler.HandlerOpt) {
-	hh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Create request with server in context
-		ctx := WithServer(r.Context(), s)
-		r = r.WithContext(ctx)
-
-		// Create responsewriter and request
-		brw := newReseponseWriter(w, r, s)
-		br := &Request{r: r}
-
-		if err := h(ctx, brw, br); err != nil {
-			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
-			return
+func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
+	s.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, opt := range opts {
+			r = opt(r)
 		}
-	})
-
-	s.Handle(pattern, hh, opts...)
+		s.invokeWithWebMiddleware(h).ServeHTTP(w, r)
+	}))
 }
 
-func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler.HandlerOpt) http.Handler {
-	// Check if we should skip CSRF protection
-	skipCSRF := slices.ContainsFunc(opts, func(o optshandler.HandlerOpt) bool {
-		_, ok := o.(HandleSkipCSRF)
-		return ok
-	})
-
-	// Apply secfetch protection
-	if skipCSRF {
-		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
-
-		//h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
-	} else {
-		// Standard protection
-		//h = secfetch.Protect(h)
-	}
-
-	// prevh := h
-	// h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	// 	if s.config.BrowserAuthMiddleware != nil {
-	// 		s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
-	// 	} else {
-	// 		prevh.ServeHTTP(w, r)
-	// 	}
-	// })
-	h = s.config.SessionManager.Wrap(h)
-	h = s.cspHandler(h)
-	h = cors.DenyPreflight(h)
-	h = s.baseWrappers(h)
-
-	return h
+func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *http.Request), opts ...HandlerOpt) {
+	s.Handle(pattern, http.HandlerFunc(h), opts...)
 }
+
+// func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...optshandler.HandlerOpt) {
+// 	hh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		// Create request with server in context
+// 		ctx := WithServer(r.Context(), s)
+// 		r = r.WithContext(ctx)
+
+// 		// Create responsewriter and request
+// 		brw := newReseponseWriter(w, r, s)
+// 		br := &Request{r: r}
+
+// 		if err := h(ctx, brw, br); err != nil {
+// 			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
+// 			return
+// 		}
+// 	})
+
+// 	s.Handle(pattern, hh)
+// }
+
+// func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler.HandlerOpt) http.Handler {
+// 	// Check if we should skip CSRF protection
+// 	skipCSRF := slices.ContainsFunc(opts, func(o optshandler.HandlerOpt) bool {
+// 		_, ok := o.(HandleSkipCSRF)
+// 		return ok
+// 	})
+
+// 	// Apply secfetch protection
+// 	if skipCSRF {
+// 		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
+
+// 		//h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
+// 	} else {
+// 		// Standard protection
+// 		//h = secfetch.Protect(h)
+// 	}
+
+// 	// prevh := h
+// 	// h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 	// 	if s.config.BrowserAuthMiddleware != nil {
+// 	// 		s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
+// 	// 	} else {
+// 	// 		prevh.ServeHTTP(w, r)
+// 	// 	}
+// 	// })
+// 	h = s.config.SessionManager.Wrap(h)
+// 	h = s.cspHandler(h)
+// 	h = cors.DenyPreflight(h)
+// 	h = s.baseWrappers(h)
+
+// 	return h
+// }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, staticPrefix) {
-		// add base middleware and serve
-		s.staticHandler.ServeHTTP(w, r)
-		return
-	}
-	h, pattern := s.mux.Handler(r)
-	if pattern == "" {
-		// TODO use error handler
-		http.NotFound(w, r)
-		return
-	}
-	if optsHandler, ok := h.(optshandler.OptsHandler); ok {
-		r = r.WithContext(optshandler.ContextWithHandlerOpts(r.Context(), optsHandler.HandleOpts()...))
-	}
-
-	rw := newReseponseWriter(w, r, s)
-	s.invokeWithBaseMiddleware(h).ServeHTTP(rw, r)
+	// TODO - errors etc.
+	brw := newReseponseWriter(w, r, s)
+	s.mux.ServeHTTP(brw, r)
 }
 
 // baseWrappers installs the lowest-level handlers that all requests should

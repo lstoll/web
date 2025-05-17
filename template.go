@@ -79,7 +79,7 @@ func (s *Server) buildFuncMap(r *http.Request, addlFuncs template.FuncMap) templ
 			return template.HTMLAttr(`nonce="` + nonce + `"`)
 		},
 	}
-	if s.config.TemplateFuncs != nil {
+	if s.config != nil && s.config.TemplateFuncs != nil {
 		for k, v := range s.config.TemplateFuncs(r.Context()) {
 			fm[k] = v
 		}

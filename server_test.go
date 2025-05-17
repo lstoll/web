@@ -39,8 +39,9 @@ func TestServer(t *testing.T) {
 
 	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
 		return rw.WriteResponse(&TemplateResponse{
-			Name: "test",
-			Data: "world",
+			Templates: tmpl,
+			Name:      "test",
+			Data:      "world",
 		})
 	}))
 
