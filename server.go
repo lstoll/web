@@ -87,17 +87,20 @@ func NewServer(c *Config) (*Server, error) {
 		return nil, fmt.Errorf("creating static handler: %w", err)
 	}
 
-	svr := &Server{
-		config:        c,
-		staticHandler: sh,
-		mux:           c.Mux,
-		baseMiddleware: []func(http.Handler) http.Handler{
-			loggingMiddleware,
-			func(h http.Handler) http.Handler {
-				// TODO - make requestID be a normal middleware
-				return requestid.Handler(true, h)
-			},
+	baseMiddleware := []func(http.Handler) http.Handler{
+		loggingMiddleware,
+		func(h http.Handler) http.Handler {
+			// TODO - make requestID be a normal middleware
+			return requestid.Handler(true, h)
 		},
+	}
+
+	svr := &Server{
+		config:               c,
+		staticHandler:        sh,
+		mux:                  c.Mux,
+		baseMiddleware:       baseMiddleware,
+		invokeWithMiddleware: buildMiddlewareChain(baseMiddleware),
 	}
 
 	if mountStatic {
@@ -113,6 +116,8 @@ type Server struct {
 	staticHandler *staticFileHandler
 
 	baseMiddleware []func(http.Handler) http.Handler
+	// invokeWithMiddleware is a pre-built function that applies the base middleware chain
+	invokeWithMiddleware func(http.Handler) http.Handler
 }
 
 func (s *Server) Session() *session.Manager {
@@ -211,12 +216,6 @@ func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO - we need to split this out to check if there's an opts handler, and if
-	// so add those opts to the context.
-	// also need to consider the split of base middleware that is used for everything,
-	// and things like auth that static and error handlers don't need.
-	middleware := s.baseMiddleware
-
 	if strings.HasPrefix(r.URL.Path, staticPrefix) {
 		// add base middleware and serve
 		s.staticHandler.ServeHTTP(w, r)
@@ -232,21 +231,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(optshandler.ContextWithHandlerOpts(r.Context(), optsHandler.HandleOpts()...))
 	}
 
-	// TODO - how do we build the middleware exactly? interate through that and
-	// do the wrapping.
-
-	// Do we get a performance gain by having a base serve http thing, rather than building
-	// the stack each time?
-
-	// Add additional middleware, e.g auth
-
-	// add base middleware and serve
-
 	rw := newReseponseWriter(w, r, s)
-
-	// building the chain per request may be a bit expensive. we should
-	// benchmark it first, if it's a problem consider caching/other methods.
-	buildMiddlewareChain(middleware)(h).ServeHTTP(rw, r)
+	s.invokeWithMiddleware(h).ServeHTTP(rw, r)
 }
 
 // baseWrappers installs the lowest-level handlers that all requests should
