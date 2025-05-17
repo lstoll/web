@@ -11,11 +11,11 @@ import (
 	"slices"
 	"strings"
 
+	"filippo.io/csrf"
 	"github.com/lstoll/web/cors"
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/optshandler"
 	"github.com/lstoll/web/requestid"
-	"github.com/lstoll/web/secfetch"
 	"github.com/lstoll/web/session"
 )
 
@@ -44,6 +44,11 @@ var DefaultCSPOpts = []csp.HandlerOpt{
 	csp.FrameAncestors(`'none'`),
 }
 
+// NoopHandler can be used to explicitly opt-out of a handler.
+func NoopHandler(h http.Handler) http.Handler {
+	return h
+}
+
 type Config struct {
 	BaseURL        *url.URL
 	SessionManager *session.Manager
@@ -67,6 +72,9 @@ type Config struct {
 	// AdditionalBrowserMiddleware is a set of middleware that will be added to
 	// all browser handlers, after the base middleware.
 	AdditionalBrowserMiddleware []func(http.Handler) http.Handler
+
+	/* start new section */
+	CSRFHandler func(http.Handler) http.Handler
 }
 
 func NewServer(c *Config) (*Server, error) {
@@ -87,6 +95,16 @@ func NewServer(c *Config) (*Server, error) {
 		return nil, fmt.Errorf("creating static handler: %w", err)
 	}
 
+	webMiddleware := []func(http.Handler) http.Handler{}
+
+	csrfHandler := c.CSRFHandler
+	if csrfHandler == nil {
+		ch := csrf.New()
+		csrfHandler = ch.Handler
+	}
+
+	webMiddleware = append(webMiddleware, csrfHandler)
+
 	baseMiddleware := []func(http.Handler) http.Handler{
 		loggingMiddleware,
 		func(h http.Handler) http.Handler {
@@ -96,11 +114,12 @@ func NewServer(c *Config) (*Server, error) {
 	}
 
 	svr := &Server{
-		config:               c,
-		staticHandler:        sh,
-		mux:                  c.Mux,
-		baseMiddleware:       baseMiddleware,
-		invokeWithMiddleware: buildMiddlewareChain(baseMiddleware),
+		config:                   c,
+		staticHandler:            sh,
+		mux:                      c.Mux,
+		baseMiddleware:           baseMiddleware,
+		invokeWithBaseMiddleware: buildMiddlewareChain(baseMiddleware),
+		invokeWithWebMiddleware:  buildMiddlewareChain(webMiddleware),
 	}
 
 	if mountStatic {
@@ -116,8 +135,10 @@ type Server struct {
 	staticHandler *staticFileHandler
 
 	baseMiddleware []func(http.Handler) http.Handler
-	// invokeWithMiddleware is a pre-built function that applies the base middleware chain
-	invokeWithMiddleware func(http.Handler) http.Handler
+	// invokeWithBaseMiddleware is a pre-built function that applies the base middleware chain
+	invokeWithBaseMiddleware func(http.Handler) http.Handler
+	// invokeWithWebMiddleware is a pre-built function that applies the web middleware chain
+	invokeWithWebMiddleware func(http.Handler) http.Handler
 }
 
 func (s *Server) Session() *session.Manager {
@@ -193,10 +214,11 @@ func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler
 	// Apply secfetch protection
 	if skipCSRF {
 		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
-		h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
+
+		//h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
 	} else {
 		// Standard protection
-		h = secfetch.Protect(h)
+		//h = secfetch.Protect(h)
 	}
 
 	// prevh := h
@@ -232,7 +254,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rw := newReseponseWriter(w, r, s)
-	s.invokeWithMiddleware(h).ServeHTTP(rw, r)
+	s.invokeWithBaseMiddleware(h).ServeHTTP(rw, r)
 }
 
 // baseWrappers installs the lowest-level handlers that all requests should
