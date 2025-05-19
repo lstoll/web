@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/lstoll/web/httperror"
+	"github.com/lstoll/web/internal"
 )
 
 // contextKey is used for context.WithValue keys
@@ -99,31 +102,16 @@ func (w *responseWriter) writeRedirectResponse(resp *RedirectResponse) error {
 }
 
 func (w *responseWriter) WriteError(err error) error {
-	if w.handled {
-		return fmt.Errorf("response already written")
-	}
 	w.handled = true
 
-	server := w.serverFromContext()
-	if server == nil {
-		// Fallback to a basic error handler if we can't get the server
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// if we're wrapped by the httperror handler, use that to handle the error.
+	erw, ok := internal.UnwrapResponseWriterTo[httperror.ResponseWriter](w)
+	if ok {
+		erw.WriteError(err)
 		return nil
 	}
 
-	server.config.ErrorHandler(w, w.r, -1, err) // TODO - get code
-	return nil
-}
-
-func (w *responseWriter) serverFromContext() *Server {
-	if w.server != nil {
-		return w.server
-	}
-
-	// Get server from context if passed that way
-	if srv, ok := w.r.Context().Value(serverContextKey).(*Server); ok {
-		return srv
-	}
-
+	// if we're not wrapped, use the default error handler.
+	httperror.DefaultErrorHandler(w, w.r, err)
 	return nil
 }

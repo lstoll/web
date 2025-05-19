@@ -47,7 +47,7 @@ func NoopHandler(h http.Handler) http.Handler {
 type Config struct {
 	BaseURL        *url.URL
 	SessionManager *session.Manager
-	ErrorHandler   func(w http.ResponseWriter, r *http.Request, code int, err error)
+	ErrorHandler   func(w http.ResponseWriter, r *http.Request, err error)
 	Static         fs.FS
 	CSPOpts        []csp.HandlerOpt
 	// ScriptNonce indicates that a nonce should be used for inline scripts.
