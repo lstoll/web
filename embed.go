@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/lstoll/web/httperror"
 )
 
 type jsonErr struct {
@@ -61,8 +63,8 @@ func SampleErrorHandler(w http.ResponseWriter, r *http.Request, templates *templ
 	)
 
 	var (
-		forbiddenErr  *ErrForbidden
-		badRequestErr *ErrBadRequest
+		forbiddenErr  *httperror.ErrForbidden
+		badRequestErr *httperror.ErrBadRequest
 	)
 	if errors.As(err, &forbiddenErr) {
 		slog.InfoContext(r.Context(), "Access denied error in web server", "err", err)

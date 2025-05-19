@@ -9,6 +9,7 @@ import (
 
 	"filippo.io/csrf"
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
 )
@@ -76,7 +77,7 @@ func NewServer(c *Config) (*Server, error) {
 		mountStatic = false
 	}
 	if c.ErrorHandler == nil {
-		c.ErrorHandler = DefaultErrorHandler
+		c.ErrorHandler = httperror.DefaultErrorHandler
 	}
 
 	sh, err := newStaticFileHandler(c.Static, staticPrefix)
