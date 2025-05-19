@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,16 +10,6 @@ import (
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/internal"
 )
-
-// contextKey is used for context.WithValue keys
-type contextKey string
-
-// serverContextKey is used to store the server in the context
-const serverContextKey contextKey = "server"
-
-func WithServer(ctx context.Context, server *Server) context.Context {
-	return context.WithValue(ctx, serverContextKey, server)
-}
 
 // newReseponseWriter creates a new ResponseWriter
 func newReseponseWriter(w http.ResponseWriter, r *http.Request, s *Server) ResponseWriter {

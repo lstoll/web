@@ -11,17 +11,14 @@ import (
 )
 
 type Request struct {
-	r *http.Request
+	sessionManager *session.Manager
+	r              *http.Request
 }
 
 // Session returns the session associated with this request.
 // It provides access to session data via Get/Set methods.
 func (b *Request) Session() session.Session {
-	ctx := b.r.Context()
-	if srv, ok := ctx.Value(serverContextKey).(*Server); ok {
-		return srv.config.SessionManager.GetSession(ctx)
-	}
-	return nil
+	return b.sessionManager.GetSession(b.r.Context())
 }
 
 func (b *Request) PostForm() url.Values {
