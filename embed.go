@@ -2,15 +2,9 @@ package web
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
-	"log/slog"
-	"net/http"
 	"strings"
-
-	"github.com/lstoll/web/httperror"
 )
 
 type jsonErr struct {
@@ -53,57 +47,4 @@ func WithSampleLayout(t *template.Template) (*template.Template, error) {
 		}
 	}
 	return t, nil
-}
-
-func SampleErrorHandler(w http.ResponseWriter, r *http.Request, templates *template.Template, err error) {
-	var (
-		code    int
-		title   string
-		message string
-	)
-
-	var (
-		forbiddenErr  *httperror.ErrForbidden
-		badRequestErr *httperror.ErrBadRequest
-	)
-	if errors.As(err, &forbiddenErr) {
-		slog.InfoContext(r.Context(), "Access denied error in web server", "err", err)
-		code = http.StatusForbidden
-		title = "Access Denied"
-		message = "Access Denied"
-	} else if errors.As(err, &badRequestErr) {
-		slog.DebugContext(r.Context(), "Bad request in web server", "err", err)
-		code = http.StatusBadRequest
-		title = "Bad Request"
-		message = "Bad Request"
-	} else {
-		slog.ErrorContext(r.Context(), "Internal error in web server", "err", err)
-		code = http.StatusInternalServerError
-		title = "Error"
-		message = `An error has occurred.`
-	}
-
-	w.WriteHeader(code)
-
-	if isJSONContentType(r.Header.Get("accept")) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(&jsonErr{
-			Error: message,
-		}); err != nil {
-			slog.ErrorContext(r.Context(), "Error in error handler!", "err", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	_ = title
-	if err := templates.ExecuteTemplate(w, "_error.tmpl.html", map[string]any{
-		// "Base": BaseTemplateArgs{
-		// 	Title: title,
-		// },
-		"ErrorMessage": template.HTML(message),
-	}); err != nil {
-		slog.ErrorContext(r.Context(), "Error in error handler!", "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-	}
 }
