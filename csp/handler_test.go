@@ -132,6 +132,81 @@ func TestHandler(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			name: "multiple sources",
+			opts: []HandlerOpt{
+				DefaultSrc("'self'"),
+				ScriptSrc("https://scripts.example.com", "'unsafe-inline'"),
+				ImgSrc("https://images.example.com", "data:"),
+			},
+			wrapped: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("OK"))
+			}),
+			req: httptest.NewRequest(http.MethodGet, "http://example.com/foo", nil),
+			checkResponse: func(resp *http.Response) error {
+				want := `default-src 'self'; script-src https://scripts.example.com 'unsafe-inline'; img-src https://images.example.com data:; report-uri http://example.com/_/csp-reports`
+				got := resp.Header.Get("Content-Security-Policy")
+				if want != got {
+					return fmt.Errorf("Content-Security-Policy: want: %q, got %q", want, got)
+				}
+				return nil
+			},
+		},
+		{
+			name: "script and style nonces",
+			opts: []HandlerOpt{
+				ReportOnly(false),
+				DefaultSrc("'self'"),
+				ScriptSrc("'self'"), // Nonce will be added
+				StyleSrc("'self'"),  // Nonce will be added
+				WithScriptNonce(),
+				WithStyleNonce(),
+			},
+			wrapped: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				scriptNonce, okS := GetScriptNonce(r.Context())
+				if !okS {
+					http.Error(w, "script nonce not found in context", http.StatusInternalServerError)
+					return
+				}
+				styleNonce, okSt := GetStyleNonce(r.Context())
+				if !okSt {
+					http.Error(w, "style nonce not found in context", http.StatusInternalServerError)
+					return
+				}
+				// Pass nonces to checkResponse via headers for simplicity in test
+				w.Header().Set("X-Test-Script-Nonce", scriptNonce)
+				w.Header().Set("X-Test-Style-Nonce", styleNonce)
+				_, _ = w.Write([]byte("OK with nonces"))
+			}),
+			req: httptest.NewRequest(http.MethodGet, "http://example.com/nonce-test", nil),
+			checkResponse: func(resp *http.Response) error {
+				scriptNonceFromHandler := resp.Header.Get("X-Test-Script-Nonce")
+				styleNonceFromHandler := resp.Header.Get("X-Test-Style-Nonce")
+
+				if scriptNonceFromHandler == "" {
+					return fmt.Errorf("did not get script nonce from handler via X-Test-Script-Nonce header")
+				}
+				if styleNonceFromHandler == "" {
+					return fmt.Errorf("did not get style nonce from handler via X-Test-Style-Nonce header")
+				}
+
+				wantCSP := fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s'; style-src 'self' 'nonce-%s'; report-uri http://example.com/_/csp-reports", scriptNonceFromHandler, styleNonceFromHandler)
+				gotCSP := resp.Header.Get("Content-Security-Policy")
+
+				if wantCSP != gotCSP {
+					return fmt.Errorf("Content-Security-Policy: want: %q, got %q", wantCSP, gotCSP)
+				}
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				if !bytes.Equal([]byte("OK with nonces"), body) {
+					return fmt.Errorf("body: want %q, got %q", "OK with nonces", body)
+				}
+				return nil
+			},
+		},
 	}
 
 	for _, tc := range cases {
