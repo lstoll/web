@@ -11,6 +11,7 @@ import (
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/requestid"
+	"github.com/lstoll/web/requestlog"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/static"
 )
@@ -96,8 +97,12 @@ func NewServer(c *Config) (*Server, error) {
 
 	webMiddleware = append(webMiddleware, csrfHandler)
 
+	loghandler := &requestlog.RequestLogger{
+		// TODO - pass in something?
+	}
+
 	baseMiddleware := []func(http.Handler) http.Handler{
-		loggingMiddleware,
+		loghandler.Handler,
 		func(h http.Handler) http.Handler {
 			// TODO - make requestID be a normal middleware
 			return requestid.Handler(true, h)
@@ -237,14 +242,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO - errors etc.
 	brw := newReseponseWriter(w, r, s)
 	s.mux.ServeHTTP(brw, r)
-}
-
-// baseWrappers installs the lowest-level handlers that all requests should
-// have, like logging etc.
-func (s *Server) baseWrappers(h http.Handler) http.Handler {
-	hh := loggingMiddleware(h)
-	hh = requestid.Handler(true, hh)
-	return hh
 }
 
 func buildMiddlewareChain(chain []func(http.Handler) http.Handler) func(http.Handler) http.Handler {

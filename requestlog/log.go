@@ -1,4 +1,4 @@
-package web
+package requestlog
 
 import (
 	"log/slog"
@@ -24,7 +24,11 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-func loggingMiddleware(next http.Handler) http.Handler {
+type RequestLogger struct {
+	Logger *slog.Logger
+}
+
+func (rl *RequestLogger) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -37,7 +41,12 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 
-		slog.InfoContext(r.Context(), "Request Served",
+		l := rl.Logger
+		if l == nil {
+			l = slog.Default()
+		}
+
+		l.InfoContext(r.Context(), "Request Served",
 			slog.String("remote_addr", r.RemoteAddr),
 			slog.Time("timestamp", time.Now()),
 			slog.String("request_method", r.Method),
