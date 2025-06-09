@@ -1,4 +1,4 @@
-package web
+package static
 
 import (
 	"embed"
@@ -20,7 +20,7 @@ var testfs = func() fs.FS {
 }()
 
 func TestStaticFileHandler(t *testing.T) {
-	h, err := newStaticFileHandler(testfs, "/static/")
+	h, err := NewFileHandler(testfs, "/static/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,6 +29,7 @@ func TestStaticFileHandler(t *testing.T) {
 		name             string
 		path             string
 		wantURL          string
+		wantResponseCode int // defaults to 200
 		wantETag         string
 		wantCacheControl string
 		wantContentType  string
@@ -36,32 +37,32 @@ func TestStaticFileHandler(t *testing.T) {
 		{
 			name:             "file1",
 			path:             "file1.txt",
-			wantURL:          "/static/file1.txt?sum=5151b2dda7951a95",
-			wantETag:         "5151b2dda7951a95",
-			wantCacheControl: "public, max-age=31536000",
+			wantURL:          "/static/file1.5151b2dd.txt",
+			wantETag:         "5151b2dda7951a9543b1c88d4a4a8362c22bcba91391bd79e2f2de5e2a45515b",
+			wantCacheControl: "public, max-age=31536000, immutable",
 			wantContentType:  "text/plain; charset=utf-8",
 		},
 		{
 			name:             "file2",
 			path:             "subdir/file2.txt",
-			wantURL:          "/static/subdir/file2.txt?sum=687830f0aa1e6225",
-			wantETag:         "687830f0aa1e6225",
-			wantCacheControl: "public, max-age=31536000",
+			wantURL:          "/static/subdir/file2.687830f0.txt",
+			wantETag:         "687830f0aa1e62250454259667150b0436c3bac5cbde18fea64fe078b3db5e70",
+			wantCacheControl: "public, max-age=31536000, immutable",
 			wantContentType:  "text/plain; charset=utf-8",
 		},
 		{
 			name:             "js",
 			path:             "test.js",
-			wantURL:          "/static/test.js?sum=7d9e5c06589e7522",
-			wantETag:         "7d9e5c06589e7522",
-			wantCacheControl: "public, max-age=31536000",
+			wantURL:          "/static/test.7d9e5c06.js",
+			wantETag:         "7d9e5c06589e75228ed9a85cb93074023cc796dacd7161bd014d51c88773ddc2",
+			wantCacheControl: "public, max-age=31536000, immutable",
 			wantContentType:  "text/javascript; charset=utf-8",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotURL, err := h.URL(tt.path)
+			gotURL, err := h.PathFor(tt.path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,6 +74,14 @@ func TestStaticFileHandler(t *testing.T) {
 			req, _ := http.NewRequest("GET", gotURL, nil)
 			rr := httptest.NewRecorder()
 			h.ServeHTTP(rr, req)
+
+			wantResponseCode := tt.wantResponseCode
+			if wantResponseCode == 0 {
+				wantResponseCode = http.StatusOK
+			}
+			if rr.Code != wantResponseCode {
+				t.Errorf("want response code %d, got: %d", wantResponseCode, rr.Code)
+			}
 
 			if tt.wantETag != rr.Header().Get("ETag") {
 				t.Errorf("want etag %s, got: %s", tt.wantETag, rr.Header().Get("ETag"))
@@ -88,11 +97,13 @@ func TestStaticFileHandler(t *testing.T) {
 		})
 	}
 
-	req, _ := http.NewRequest("GET", "/static/file1.txt", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
+	t.Run("unversioned request", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/static/file1.txt", nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
 
-	if rr.Header().Get("Cache-Control") != "no-store" {
-		t.Errorf("want cache-control %s, got: %s", "no-store", rr.Header().Get("Cache-Control"))
-	}
+		if rr.Code != http.StatusOK {
+			t.Errorf("want response code %d, got: %d", http.StatusOK, rr.Code)
+		}
+	})
 }

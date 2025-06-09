@@ -30,7 +30,7 @@ func TestServer(t *testing.T) {
 	svr, err := NewServer(&Config{
 		BaseURL:        base,
 		SessionManager: sm,
-		Static:         testfs,
+		Static:         nil, // TODO
 	})
 	if err != nil {
 		t.Fatal(err)

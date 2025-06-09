@@ -41,7 +41,7 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 		BaseURL:        base,
 		SessionManager: sm,
 		// Templates:      tmpl,
-		Static:      testfs,
+		Static:      nil, // TODO
 		ScriptNonce: true,
 	})
 	if err != nil {

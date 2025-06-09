@@ -62,7 +62,7 @@ func (s *Server) buildFuncMap(r *http.Request, addlFuncs template.FuncMap) templ
 			return ""
 		},
 		"StaticPath": func(p string) (string, error) {
-			return s.staticHandler.URL(p)
+			return s.staticHandler.PathFor(p)
 		},
 		"ScriptNonceAttr": func() template.HTMLAttr {
 			nonce, ok := r.Context().Value(ctxKeyScriptNonce{}).(string)

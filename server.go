@@ -12,6 +12,7 @@ import (
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/session"
+	"github.com/lstoll/web/static"
 )
 
 const staticPrefix = "/static/"
@@ -80,7 +81,7 @@ func NewServer(c *Config) (*Server, error) {
 		c.ErrorHandler = httperror.DefaultErrorHandler
 	}
 
-	sh, err := newStaticFileHandler(c.Static, staticPrefix)
+	sh, err := static.NewFileHandler(c.Static, staticPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("creating static handler: %w", err)
 	}
@@ -122,7 +123,7 @@ func NewServer(c *Config) (*Server, error) {
 type Server struct {
 	config        *Config
 	mux           *http.ServeMux
-	staticHandler *staticFileHandler
+	staticHandler *static.FileHandler
 
 	baseMiddleware []func(http.Handler) http.Handler
 	// invokeWithBaseMiddleware is a pre-built function that applies the base middleware chain
