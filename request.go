@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/lstoll/web/form"
 	"github.com/lstoll/web/session"
 )
 
@@ -59,7 +60,7 @@ func (b *Request) DecodeForm(target any) error {
 		return fmt.Errorf("parsing request form: %w", err)
 	}
 
-	if err := decodeForm(b.r.PostForm, target); err != nil {
+	if err := form.Decode(b.r.PostForm, target); err != nil {
 		return err
 	}
 

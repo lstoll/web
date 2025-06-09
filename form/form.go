@@ -1,4 +1,4 @@
-package web
+package form
 
 import (
 	"encoding"
@@ -19,8 +19,8 @@ func (e *ErrInvalidForm) Error() string {
 	return fmt.Sprintf("Form is missing the following fields: %s", strings.Join(e.MissingFields, ", "))
 }
 
-// decodeForm parses a url.Values into a struct based on struct tags.
-func decodeForm(values url.Values, into any) error {
+// Decode parses a url.Values into a struct based on struct tags.
+func Decode(values url.Values, into any) error {
 	v := reflect.ValueOf(into).Elem()
 	t := v.Type()
 

@@ -1,4 +1,4 @@
-package web
+package form
 
 import (
 	"net/url"
@@ -90,7 +90,7 @@ func TestParseForm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := User{}
-			err := decodeForm(tt.values, &got)
+			err := Decode(tt.values, &got)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("decodeForm() error = %v, wantErr %v", err, tt.wantErr)
