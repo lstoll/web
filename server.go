@@ -240,7 +240,7 @@ func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *htt
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO - errors etc.
-	brw := newReseponseWriter(w, r, s)
+	brw := newResponseWriter(w, r, s)
 	s.mux.ServeHTTP(brw, r)
 }
 

@@ -11,8 +11,8 @@ import (
 	"github.com/lstoll/web/internal"
 )
 
-// newReseponseWriter creates a new ResponseWriter
-func newReseponseWriter(w http.ResponseWriter, r *http.Request, s *Server) ResponseWriter {
+// newResponseWriter creates a new ResponseWriter
+func newResponseWriter(w http.ResponseWriter, r *http.Request, s *Server) ResponseWriter {
 	return &responseWriter{
 		ResponseWriter: w,
 		r:              r,
