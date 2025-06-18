@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/lstoll/web/slogctx"
 )
 
 // loggingResponseWriter wraps the standard http.ResponseWriter to capture status and bytes written.
@@ -32,6 +34,10 @@ func (rl *RequestLogger) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
+		// Create a new context with a handle to capture attributes
+		ctx, handle := slogctx.WithHandle(r.Context())
+		r = r.WithContext(ctx)
+
 		lrw := &loggingResponseWriter{ResponseWriter: w}
 		next.ServeHTTP(lrw, r)
 
@@ -46,7 +52,9 @@ func (rl *RequestLogger) Handler(next http.Handler) http.Handler {
 			l = slog.Default()
 		}
 
-		l.InfoContext(r.Context(), "Request Served",
+		attrs := handle.Attrs()
+
+		attrs = append(attrs,
 			slog.String("remote_addr", r.RemoteAddr),
 			slog.Time("timestamp", time.Now()),
 			slog.String("request_method", r.Method),
@@ -58,5 +66,13 @@ func (rl *RequestLogger) Handler(next http.Handler) http.Handler {
 			slog.String("user_agent", r.UserAgent()),
 			slog.Duration("duration", duration),
 		)
+
+		anyAttrs := make([]any, len(attrs)*2)
+		for i, attr := range attrs {
+			anyAttrs[i*2] = attr.Key
+			anyAttrs[i*2+1] = attr.Value.Any()
+		}
+
+		l.InfoContext(r.Context(), "Request Served", anyAttrs...)
 	})
 }
