@@ -27,8 +27,8 @@ func (t *TestResult) Result() map[string]any {
 
 // TestContext attaches a session to a context, to be used for testing. The
 // returned TestResult can be used to verify the actions against the session
-func TestContext(mgr *Manager, ctx context.Context, sess map[string]any) (context.Context, *TestResult) {
-	return context.WithValue(ctx, mgrSessCtxKey{inst: mgr}, &sessCtx{
+func TestContext(ctx context.Context, sess map[string]any) (context.Context, *TestResult) {
+	return context.WithValue(ctx, sessionContextKey{}, &sessCtx{
 		metadata: &sessionMetadata{
 			CreatedAt: time.Now(),
 		},

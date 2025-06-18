@@ -4,7 +4,11 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+
+	"github.com/lstoll/web/internal"
 )
+
+var _ internal.UnwrappableResponseWriter = (*hookRW)(nil)
 
 // hookRW can be used to trigger an action before the response writing starts,
 // in our case saving the session. It will only be called once
@@ -36,4 +40,8 @@ func (h *hookRW) WriteHeader(statusCode int) {
 	if write {
 		h.ResponseWriter.WriteHeader(statusCode)
 	}
+}
+
+func (h *hookRW) Unwrap() http.ResponseWriter {
+	return h.ResponseWriter
 }

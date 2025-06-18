@@ -12,77 +12,14 @@ import (
 	"time"
 )
 
-// Session represents a user session with data access methods.
-type Session interface {
-	// Get returns the value for the given key from the session.
-	// If the key doesn't exist, it returns nil.
-	Get(key string) any
-
-	// GetAll returns the entire session data map.
-	GetAll() map[string]any
-
-	// Set sets a single key-value pair in the session and marks it to be saved.
-	Set(key string, value any)
-
-	// SetAll sets the entire session data map and marks it to be saved.
-	SetAll(data map[string]any)
-
-	// Delete marks the session for deletion at the end of the request.
-	Delete()
-
-	// Reset rotates the session ID to avoid session fixation.
-	Reset()
-
-	// HasFlash indicates if there is a flash message.
-	HasFlash() bool
-
-	// FlashIsError indicates that the flash message is an error.
-	FlashIsError() bool
-
-	// FlashMessage returns the current flash message.
-	FlashMessage() string
-}
-
-// sessionInstance implements the Session interface.
-type sessionInstance struct {
-	ctx context.Context
-	mgr *Manager
-}
-
-func (s *sessionInstance) Get(key string) any {
-	return s.mgr.get(s.ctx, key)
-}
-
-func (s *sessionInstance) GetAll() map[string]any {
-	return s.mgr.getAll(s.ctx)
-}
-
-func (s *sessionInstance) Set(key string, value any) {
-	s.mgr.set(s.ctx, key, value)
-}
-
-func (s *sessionInstance) SetAll(data map[string]any) {
-	s.mgr.setAll(s.ctx, data)
-}
-
-func (s *sessionInstance) Delete() {
-	s.mgr.delete(s.ctx)
-}
-
-func (s *sessionInstance) Reset() {
-	s.mgr.reset(s.ctx)
-}
-
-func (s *sessionInstance) HasFlash() bool {
-	return s.mgr.HasFlash(s.ctx)
-}
-
-func (s *sessionInstance) FlashIsError() bool {
-	return s.mgr.FlashIsError(s.ctx)
-}
-
-func (s *sessionInstance) FlashMessage() string {
-	return s.mgr.FlashMessage(s.ctx)
+// FromContext returns the Session from the given context.
+// It panics if no session exists in the context.
+func FromContext(ctx context.Context) Session {
+	sessCtx, ok := ctx.Value(sessionContextKey{}).(*sessCtx)
+	if !ok {
+		panic("no session in context")
+	}
+	return sessCtx
 }
 
 // sessionMetadata tracks additional information for the session manager to use,
@@ -232,10 +169,8 @@ var managerCookieValueEncoding = base64.RawURLEncoding
 // Wrap creates middleware that handles session management for each request
 func (m *Manager) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := r.Context().Value(mgrSessCtxKey{inst: m}).(*sessCtx); ok {
-			// already wrapped for this instance, noop
-			next.ServeHTTP(w, r)
-			return
+		if _, ok := r.Context().Value(sessionContextKey{}).(*sessCtx); ok {
+			panic("session middleware wrapped more than once")
 		}
 
 		// Create new session context with initial metadata
@@ -261,7 +196,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			decodedData, err := m.codec.Decode(data)
 			if err != nil {
 				// Log the error but don't fail the request - just start a new session
-				slog.WarnContext(r.Context(), "Failed to decode session data, starting a new one", "err", err)
+				slog.WarnContext(r.Context(), "Failed to decode session data, starting a new session", "err", err)
 			} else {
 				sctx.data = decodedData
 				sctx.metadata = extractMetadata(decodedData)
@@ -279,7 +214,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			}
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), mgrSessCtxKey{inst: m}, sctx))
+		r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, sctx))
 
 		hw := &hookRW{
 			ResponseWriter: w,
@@ -294,92 +229,6 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			hw.hook(hw.ResponseWriter)
 		})
 	})
-}
-
-// GetSession returns a Session instance for the given context.
-func (m *Manager) GetSession(ctx context.Context) Session {
-	return &sessionInstance{
-		ctx: ctx,
-		mgr: m,
-	}
-}
-
-// internal get implementation
-func (m *Manager) get(ctx context.Context, key string) any {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		panic("context contained no or invalid session")
-	}
-
-	return sessCtx.data[key]
-}
-
-// internal getAll implementation
-func (m *Manager) getAll(ctx context.Context) map[string]any {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		panic("context contained no or invalid session")
-	}
-
-	return sessCtx.data
-}
-
-// internal set implementation
-func (m *Manager) set(ctx context.Context, key string, value any) {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		panic("context contained no or invalid session")
-	}
-	sessCtx.delete = false
-	sessCtx.save = true
-	sessCtx.data[key] = value
-}
-
-// internal setAll implementation
-func (m *Manager) setAll(ctx context.Context, data map[string]any) {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		panic("context contained no or invalid session")
-	}
-	sessCtx.delete = false
-	sessCtx.save = true
-
-	// Keep the existing metadata
-	md := sessCtx.metadata
-	sessCtx.data = data
-
-	// Make sure metadata stays in the map
-	setMetadata(sessCtx.data, md)
-}
-
-// internal delete implementation
-func (m *Manager) delete(ctx context.Context) {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		panic("context contained no or invalid session")
-	}
-	sessCtx.datab = nil
-	sessCtx.data = make(map[string]any)
-	sessCtx.delete = true
-	sessCtx.save = false
-	sessCtx.reset = false
-}
-
-// internal reset implementation
-func (m *Manager) reset(ctx context.Context) {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		panic("context contained no or invalid session")
-	}
-	sessCtx.datab = nil
-	sessCtx.save = false
-	sessCtx.delete = false
-	sessCtx.reset = true
-}
-
-func (m *Manager) handleErr(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "error in session manager", "err", err)
-	http.Error(w, "Internal Error", http.StatusInternalServerError)
 }
 
 // Storage methods
@@ -600,67 +449,7 @@ func managerRemoveCookieByName(w http.ResponseWriter, cookieName string) {
 	}
 }
 
-type mgrSessCtxKey struct{ inst *Manager }
-
-type sessCtx struct {
-	metadata *sessionMetadata
-	// data is the actual session data
-	data map[string]any
-	// datab is the original loaded data bytes. Used for idle timeout, when a
-	// save may happen without data modification
-	datab  []byte
-	delete bool
-	save   bool
-	reset  bool
-}
-
-// HasFlash indicates if there is a flash message
-func (m *Manager) HasFlash(ctx context.Context) bool {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		return false
-	}
-	_, hasFlash := sessCtx.data["__flash"]
-	return hasFlash
-}
-
-// FlashIsError indicates that the flash message is an error.
-func (m *Manager) FlashIsError(ctx context.Context) bool {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		return false
-	}
-	isErr, ok := sessCtx.data["__flash_is_error"]
-	if !ok {
-		return false
-	}
-	boolVal, ok := isErr.(bool)
-	if !ok {
-		return false
-	}
-	return boolVal
-}
-
-// FlashMessage returns the current flash message and clears it.
-func (m *Manager) FlashMessage(ctx context.Context) string {
-	sessCtx, ok := ctx.Value(mgrSessCtxKey{inst: m}).(*sessCtx)
-	if !ok {
-		return ""
-	}
-
-	flash, ok := sessCtx.data["__flash"]
-	if !ok {
-		return ""
-	}
-
-	// Clear the flash
-	delete(sessCtx.data, "__flash")
-	delete(sessCtx.data, "__flash_is_error")
-	sessCtx.save = true
-
-	str, ok := flash.(string)
-	if !ok {
-		return ""
-	}
-	return str
+func (m *Manager) handleErr(w http.ResponseWriter, r *http.Request, err error) {
+	slog.ErrorContext(r.Context(), "error in session manager", "err", err)
+	http.Error(w, "Internal Error", http.StatusInternalServerError)
 }
