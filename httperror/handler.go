@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/lstoll/web/internal"
 )
 
 // ErrorHandler defines the interface for handling errors
@@ -61,6 +63,8 @@ func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
+
+var _ internal.UnwrappableResponseWriter = (*responseWriter)(nil)
 
 // responseWriter wraps an http.ResponseWriter to intercept error responses
 type responseWriter struct {

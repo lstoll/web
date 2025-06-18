@@ -2,6 +2,14 @@ package internal
 
 import "net/http"
 
+// UnwrappableResponseWriter is a type that can be unwrapped to get the
+// underlying ResponseWriter. It matches stdlib behavior, used to guard our
+// implementations.
+type UnwrappableResponseWriter interface {
+	http.ResponseWriter
+	Unwrap() http.ResponseWriter
+}
+
 // UnwrapResponseWriterTo walks back the chain of ResponseWriters
 // until it finds one that implements the target interface.
 // It returns the found ResponseWriter or nil if not found.

@@ -5,9 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lstoll/web/internal"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/slogctx"
 )
+
+var _ internal.UnwrappableResponseWriter = (*loggingResponseWriter)(nil)
 
 // loggingResponseWriter wraps the standard http.ResponseWriter to capture status and bytes written.
 type loggingResponseWriter struct {
@@ -25,6 +28,10 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := lrw.ResponseWriter.Write(b)
 	lrw.bytesWritten += n
 	return n, err
+}
+
+func (lrw *loggingResponseWriter) Unwrap() http.ResponseWriter {
+	return lrw.ResponseWriter
 }
 
 type RequestLogger struct {
