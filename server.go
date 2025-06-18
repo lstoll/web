@@ -1,7 +1,6 @@
 package web
 
 import (
-	"crypto/rand"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -18,22 +17,10 @@ import (
 
 const staticPrefix = "/static/"
 
-// Session defines the interface we expect a session object to have.
-type Session interface {
-	// HasFlash indicates if there is a flash message
-	HasFlash() bool
-	// FlashIsError indicates that the flash message is an error. If not, info
-	// is assumed.
-	FlashIsError() bool
-	// FlashMessage returns the current flash message. The flash should be
-	// cleared when this is called, and the session will be saved after this.
-	FlashMessage() string
-}
-
 var DefaultCSPOpts = []csp.HandlerOpt{
 	csp.DefaultSrc(`'none'`),
-	csp.ScriptSrc(`'self' 'unsafe-inline'`),
-	csp.StyleSrc(`'self' 'unsafe-inline'`),
+	csp.WithScriptNonce(),
+	csp.WithStyleNonce(),
 	csp.ImgSrc(`'self'`),
 	csp.ConnectSrc(`'self'`),
 	csp.FontSrc(`'self'`),
@@ -137,38 +124,6 @@ type Server struct {
 	invokeWithWebMiddleware func(http.Handler) http.Handler
 }
 
-func (s *Server) Session() *session.Manager {
-	return s.config.SessionManager
-}
-
-type HandleBrowserOpts struct {
-	SkipCSRF bool
-}
-
-// HandleSkipCSRF is an opt that can be passed to a HandleBrowser to skip CSRF
-// protection.
-//
-// Deprecated: CSRF should always be passed via form or header for relevant
-// actions. Exceptions should be documented.
-type HandleSkipCSRF struct{}
-
-func (s *Server) cspHandler(wrap http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cspOpts := s.config.CSPOpts
-		if s.config.ScriptNonce {
-			nonce := rand.Text()
-			cspOpts = append(cspOpts, csp.ScriptSrc("'nonce-"+nonce+"'"))
-			r = r.WithContext(contextWithScriptNonce(r.Context(), nonce))
-		}
-		if s.config.StyleNonce {
-			nonce := rand.Text()
-			cspOpts = append(cspOpts, csp.StyleSrc("'nonce-"+nonce+"'"))
-			r = r.WithContext(contextWithStyleNonce(r.Context(), nonce))
-		}
-		csp.NewHandler(*s.config.BaseURL, cspOpts...).Wrap(wrap).ServeHTTP(w, r)
-	})
-}
-
 func (s *Server) HandleRaw(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, s.invokeWithBaseMiddleware(handler))
 }
@@ -185,58 +140,6 @@ func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
 func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *http.Request), opts ...HandlerOpt) {
 	s.Handle(pattern, http.HandlerFunc(h), opts...)
 }
-
-// func (s *Server) HandleBrowserFunc(pattern string, h BrowserHandlerFunc, opts ...optshandler.HandlerOpt) {
-// 	hh := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		// Create request with server in context
-// 		ctx := WithServer(r.Context(), s)
-// 		r = r.WithContext(ctx)
-
-// 		// Create responsewriter and request
-// 		brw := newReseponseWriter(w, r, s)
-// 		br := &Request{r: r}
-
-// 		if err := h(ctx, brw, br); err != nil {
-// 			s.config.ErrorHandler(w, r, s.config.Templates.Funcs(s.buildFuncMap(r, nil)), err)
-// 			return
-// 		}
-// 	})
-
-// 	s.Handle(pattern, hh)
-// }
-
-// func (s *Server) buildBrowserMiddlewareStack(h http.Handler, opts ...optshandler.HandlerOpt) http.Handler {
-// 	// Check if we should skip CSRF protection
-// 	skipCSRF := slices.ContainsFunc(opts, func(o optshandler.HandlerOpt) bool {
-// 		_, ok := o.(HandleSkipCSRF)
-// 		return ok
-// 	})
-
-// 	// Apply secfetch protection
-// 	if skipCSRF {
-// 		// If skipping CSRF, we'll still apply secfetch but allow cross-site requests
-
-// 		//h = secfetch.Protect(h, secfetch.AllowCrossSiteNavigation{}, secfetch.AllowCrossSiteAPI{})
-// 	} else {
-// 		// Standard protection
-// 		//h = secfetch.Protect(h)
-// 	}
-
-// 	// prevh := h
-// 	// h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 	// 	if s.config.BrowserAuthMiddleware != nil {
-// 	// 		s.BrowserHandler(s.config.BrowserAuthMiddleware(prevh, opts...)).ServeHTTP(w, r)
-// 	// 	} else {
-// 	// 		prevh.ServeHTTP(w, r)
-// 	// 	}
-// 	// })
-// 	h = s.config.SessionManager.Wrap(h)
-// 	h = s.cspHandler(h)
-// 	h = cors.DenyPreflight(h)
-// 	h = s.baseWrappers(h)
-
-// 	return h
-// }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO - errors etc.
