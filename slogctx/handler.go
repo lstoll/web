@@ -25,6 +25,13 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	// Get attributes from context
 	attrs := AttrsFromContext(ctx)
+
+	// Get attributes from registered extractors
+	extractedAttrs := getExtractedAttributes(ctx)
+	if len(extractedAttrs) > 0 {
+		attrs = append(attrs, extractedAttrs...)
+	}
+
 	if len(attrs) > 0 {
 		// Create a new record with the context attributes
 		r = r.Clone()

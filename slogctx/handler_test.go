@@ -6,7 +6,18 @@ import (
 	"testing"
 )
 
+// testExtractor is a simple attribute extractor for testing
+func testExtractor(ctx context.Context) []slog.Attr {
+	if v, ok := ctx.Value("test_key").(string); ok {
+		return []slog.Attr{slog.String("extracted_key", v)}
+	}
+	return nil
+}
+
 func TestHandler(t *testing.T) {
+	// Register our test extractor
+	RegisterAttributeExtractor("test", testExtractor)
+
 	// Create a test handler that records all records
 	records := make([]slog.Record, 0)
 	handler := &testHandler{
@@ -63,6 +74,32 @@ func TestHandler(t *testing.T) {
 				"ctx_attr": slog.StringValue("value"),
 			},
 		},
+		{
+			name: "with extracted attrs",
+			ctx:  context.WithValue(context.Background(), "test_key", "extracted_value"),
+			record: slog.Record{
+				Level:   slog.LevelInfo,
+				Message: "test message",
+			},
+			wantAttrs: map[string]slog.Value{
+				"extracted_key": slog.StringValue("extracted_value"),
+			},
+		},
+		{
+			name: "with both context and extracted attrs",
+			ctx: WithAttrs(
+				context.WithValue(context.Background(), "test_key", "extracted_value"),
+				slog.String("ctx_attr", "value"),
+			),
+			record: slog.Record{
+				Level:   slog.LevelInfo,
+				Message: "test message",
+			},
+			wantAttrs: map[string]slog.Value{
+				"ctx_attr":      slog.StringValue("value"),
+				"extracted_key": slog.StringValue("extracted_value"),
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -111,6 +148,44 @@ func TestHandler(t *testing.T) {
 			}
 		})
 	}
+
+	// Test deregistration
+	t.Run("deregister extractor", func(t *testing.T) {
+		// Verify extractor is registered
+		if !DeregisterAttributeExtractor("test") {
+			t.Error("expected to find and remove test extractor")
+		}
+
+		// Verify it's gone
+		if DeregisterAttributeExtractor("test") {
+			t.Error("expected test extractor to be already removed")
+		}
+
+		// Verify it no longer adds attributes
+		records = records[:0]
+		ctx := context.WithValue(context.Background(), "test_key", "extracted_value")
+		if err := ctxHandler.Handle(ctx, slog.Record{
+			Level:   slog.LevelInfo,
+			Message: "test message",
+		}); err != nil {
+			t.Fatalf("Handle() error = %v", err)
+		}
+
+		if len(records) != 1 {
+			t.Fatalf("expected 1 record, got %d", len(records))
+		}
+
+		// Verify no extracted attributes are present
+		gotAttrs := make(map[string]slog.Value)
+		records[0].Attrs(func(a slog.Attr) bool {
+			gotAttrs[a.Key] = a.Value
+			return true
+		})
+
+		if _, ok := gotAttrs["extracted_key"]; ok {
+			t.Error("expected extracted_key to be removed")
+		}
+	})
 }
 
 func TestHandlerWithAttrs(t *testing.T) {
