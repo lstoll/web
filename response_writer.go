@@ -63,7 +63,7 @@ func (w *responseWriter) WriteResponse(resp BrowserResponse) error {
 }
 
 func (w *responseWriter) writeTemplateResponse(resp *TemplateResponse) error {
-	t := resp.Templates.Funcs(w.server.buildFuncMap(w.r, resp.Funcs))
+	t := resp.Templates.Funcs(TemplateFuncs(w.r, resp.Funcs))
 
 	// Buffer the render to capture errors before writing
 	var buf bytes.Buffer

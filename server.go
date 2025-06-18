@@ -84,16 +84,25 @@ func NewServer(c *Config) (*Server, error) {
 
 	webMiddleware = append(webMiddleware, csrfHandler)
 
+	// set the static handler in the context, so we can use it to build paths in
+	// templates.
+	webMiddleware = append(webMiddleware, func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(contextWithStaticHandler(r.Context(), sh))
+			h.ServeHTTP(w, r)
+		})
+	})
+
 	loghandler := &requestlog.RequestLogger{
 		// TODO - pass in something?
 	}
 
 	baseMiddleware := []func(http.Handler) http.Handler{
-		loghandler.Handler,
 		func(h http.Handler) http.Handler {
 			// TODO - make requestID be a normal middleware
 			return requestid.Handler(true, h)
 		},
+		loghandler.Handler,
 	}
 
 	svr := &Server{

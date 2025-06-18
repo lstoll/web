@@ -3,6 +3,9 @@ package web
 import (
 	"html/template"
 	"net/http"
+
+	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/session"
 )
 
 // BaseFuncMap is a set of placeholder functions to use at parse time. These
@@ -34,46 +37,31 @@ var BaseFuncMap = template.FuncMap{
 	"StyleNonceAttr": func(string) (string, error) { panic("base func map should not be used") },
 }
 
-func (s *Server) buildFuncMap(r *http.Request, addlFuncs template.FuncMap) template.FuncMap {
-	// sess := s.config.SessionManager.Get(r.Context())
+func TemplateFuncs(r *http.Request, addlFuncs template.FuncMap) template.FuncMap {
+	sess := session.FromContext(r.Context())
 	fm := map[string]any{
-		// Deprecated: CSRF protection is now handled automatically by Sec-Fetch headers
-		"CSRFField": func() template.HTML {
-			// No actual CSRF token is needed anymore, but we return an empty field for compatibility
-			return template.HTML(`<input id="csrf_token" type="hidden" name="csrf_token" value="">`)
-		},
-		// Deprecated: CSRF protection is now handled automatically by Sec-Fetch headers
-		"CSRFToken": func() string {
-			// No actual CSRF token is needed anymore, but we return an empty string for compatibility
-			return ""
-		},
 		"HasFlash": func() bool {
-			// return sess.HasFlash() // TODO
-			return false
+			return sess.HasFlash()
 		},
 		"FlashIsError": func() bool {
-			// return sess.FlashIsError() // TODO
-			return false
+			return sess.FlashIsError()
 		},
 		"FlashMessage": func() string {
-			// m := sess.FlashMessage()
-			// s.config.SessionManager.Save(r.Context(), sess)
-			// return m
-			return ""
+			return sess.FlashMessage()
 		},
 		"StaticPath": func(p string) (string, error) {
-			return s.staticHandler.PathFor(p)
+			return staticHandlerFromContext(r.Context()).PathFor(p)
 		},
 		"ScriptNonceAttr": func() template.HTMLAttr {
-			nonce, ok := r.Context().Value(ctxKeyScriptNonce{}).(string)
-			if !ok || nonce == "" {
+			nonce, ok := csp.GetScriptNonce(r.Context())
+			if !ok {
 				return ""
 			}
 			return template.HTMLAttr(`nonce="` + nonce + `"`)
 		},
 		"StyleNonceAttr": func() template.HTMLAttr {
-			nonce, ok := r.Context().Value(ctxKeyStyleNonce{}).(string)
-			if !ok || nonce == "" {
+			nonce, ok := csp.GetStyleNonce(r.Context())
+			if !ok {
 				return ""
 			}
 			return template.HTMLAttr(`nonce="` + nonce + `"`)

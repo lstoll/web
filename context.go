@@ -2,19 +2,16 @@ package web
 
 import (
 	"context"
+
+	"github.com/lstoll/web/static"
 )
 
-type ctxKeyScriptNonce struct{}
+type staticHandlerCtxKey struct{}
 
-func contextWithScriptNonce(ctx context.Context, nonce string) context.Context {
-	return context.WithValue(ctx, ctxKeyScriptNonce{}, nonce)
+func contextWithStaticHandler(ctx context.Context, sh *static.FileHandler) context.Context {
+	return context.WithValue(ctx, staticHandlerCtxKey{}, sh)
 }
 
-type ctxKeyStyleNonce struct{}
-
-func contextWithStyleNonce(ctx context.Context, nonce string) context.Context {
-	return context.WithValue(ctx, ctxKeyStyleNonce{}, nonce)
+func staticHandlerFromContext(ctx context.Context) *static.FileHandler {
+	return ctx.Value(staticHandlerCtxKey{}).(*static.FileHandler)
 }
-
-// The following functions are deprecated and only kept for backward compatibility
-// since we've moved to secfetch for CSRF protection.
