@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/slogctx"
 )
 
@@ -66,6 +67,9 @@ func (rl *RequestLogger) Handler(next http.Handler) http.Handler {
 			slog.String("user_agent", r.UserAgent()),
 			slog.Duration("duration", duration),
 		)
+		if rid, ok := requestid.FromContext(ctx); ok {
+			attrs = append(attrs, slog.String("request_id", rid))
+		}
 
 		anyAttrs := make([]any, len(attrs)*2)
 		for i, attr := range attrs {
