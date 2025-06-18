@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"filippo.io/csrf"
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/csrf"
 	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/requestlog"
@@ -91,8 +91,8 @@ func NewServer(c *Config) (*Server, error) {
 
 	csrfHandler := c.CSRFHandler
 	if csrfHandler == nil {
-		ch := csrf.New()
-		csrfHandler = ch.Handler
+		ch := http.NewCrossOriginProtection()
+		csrfHandler = csrf.NewHandler(ch).Handler
 	}
 
 	webMiddleware = append(webMiddleware, csrfHandler)
