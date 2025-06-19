@@ -6,6 +6,14 @@ import (
 	"slices"
 )
 
+type ErrHandlerNotFound struct {
+	Name string
+}
+
+func (e *ErrHandlerNotFound) Error() string {
+	return fmt.Sprintf("handler %s not found", e.Name)
+}
+
 type chainedHandler struct {
 	Name    string
 	Handler func(next http.Handler) http.Handler
@@ -31,7 +39,7 @@ func (c *Chain) InsertBefore(name string, handler func(next http.Handler) http.H
 			return nil
 		}
 	}
-	return fmt.Errorf("handler %s not found", name)
+	return &ErrHandlerNotFound{Name: name}
 }
 
 func (c *Chain) InsertAfter(name string, handler func(next http.Handler) http.Handler) error {
@@ -42,7 +50,7 @@ func (c *Chain) InsertAfter(name string, handler func(next http.Handler) http.Ha
 			return nil
 		}
 	}
-	return fmt.Errorf("handler %s not found", name)
+	return &ErrHandlerNotFound{Name: name}
 }
 
 func (c *Chain) Remove(name string) error {
@@ -52,7 +60,7 @@ func (c *Chain) Remove(name string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("handler %s not found", name)
+	return &ErrHandlerNotFound{Name: name}
 }
 
 func (c *Chain) Replace(name string, handler func(next http.Handler) http.Handler) error {
@@ -62,7 +70,7 @@ func (c *Chain) Replace(name string, handler func(next http.Handler) http.Handle
 			return nil
 		}
 	}
-	return fmt.Errorf("handler %s not found", name)
+	return &ErrHandlerNotFound{Name: name}
 }
 
 func (c *Chain) List() []string {
