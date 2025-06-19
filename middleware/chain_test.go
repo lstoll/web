@@ -642,16 +642,24 @@ func TestChain_ComplexOperations(t *testing.T) {
 				chain.Append("C", nil)
 
 				// Insert before B
-				chain.InsertBefore("B", nil)
+				if err := chain.InsertBefore("B", nil); err != nil {
+					t.Fatal(err)
+				}
 
 				// Insert after C
-				chain.InsertAfter("C", nil)
+				if err := chain.InsertAfter("C", nil); err != nil {
+					t.Fatal(err)
+				}
 
 				// Remove A
-				chain.Remove("A")
+				if err := chain.Remove("A"); err != nil {
+					t.Fatal(err)
+				}
 
 				// Replace B
-				chain.Replace("B", nil)
+				if err := chain.Replace("B", nil); err != nil {
+					t.Fatal(err)
+				}
 			},
 			wantNames: []string{"inserted", "B", "C", "inserted"},
 		},

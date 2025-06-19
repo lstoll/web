@@ -11,6 +11,10 @@ linters:
       - linters:
           - errcheck
         source: ^\s*defer\s+
+      - path: _test\.go
+        linters:
+          - errcheck
+        text: "Error return value of `w.Write` is not checked"
     paths:
       - third_party$
       - builtin$
