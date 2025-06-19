@@ -53,7 +53,7 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 	}
 
 	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
-		return rw.WriteResponse(&TemplateResponse{
+		return rw.WriteResponse(br, &TemplateResponse{
 			Templates: tmpl,
 			Name:      "test",
 		})

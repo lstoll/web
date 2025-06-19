@@ -10,9 +10,9 @@ type UnwrappableResponseWriter interface {
 	Unwrap() http.ResponseWriter
 }
 
-// UnwrapResponseWriterTo walks back the chain of ResponseWriters
-// until it finds one that implements the target interface.
-// It returns the found ResponseWriter or nil if not found.
+// UnwrapResponseWriterTo walks back the chain of ResponseWriters until it finds
+// one that implements the target interface, including the current response
+// writer. It returns the found ResponseWriter or nil if not found.
 func UnwrapResponseWriterTo[T any](rw http.ResponseWriter) (T, bool) {
 	currentRW := rw
 	for {
@@ -20,6 +20,23 @@ func UnwrapResponseWriterTo[T any](rw http.ResponseWriter) (T, bool) {
 			return target, true
 		}
 
+		if unwrapper, ok := currentRW.(interface {
+			Unwrap() http.ResponseWriter
+		}); ok {
+			currentRW = unwrapper.Unwrap()
+		} else {
+			var zero T
+			return zero, false
+		}
+	}
+}
+
+// UnwrapResponseWriterToPrevious walks back the chain of ResponseWriters until
+// it finds one that implements the target interface, excluding the passed in
+// response writer. It returns the found ResponseWriter or nil if not found.
+func UnwrapResponseWriterToPrevious[T any](rw http.ResponseWriter) (T, bool) {
+	currentRW := rw
+	for {
 		if unwrapper, ok := currentRW.(interface {
 			Unwrap() http.ResponseWriter
 		}); ok {

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/lstoll/web/httperror"
+	"github.com/lstoll/web/internal"
 )
 
 type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error
@@ -11,10 +14,10 @@ type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error
 func (b BrowserHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rw, ok := w.(ResponseWriter)
 	if !ok {
-		rw = newResponseWriter(w, r, nil)
+		rw = newResponseWriter(w)
 	}
 	if err := r.ParseForm(); err != nil {
-		_ = rw.WriteError(fmt.Errorf("parsing form: %w", err))
+		b.handleError(rw, r, fmt.Errorf("parsing form: %w", err))
 		return
 	}
 
@@ -25,7 +28,16 @@ func (b BrowserHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Call handler with response writer
 	err := b(r.Context(), rw, br)
 	if err != nil {
-		_ = rw.WriteError(fmt.Errorf("parsing form: %w", err))
+		b.handleError(rw, br.r, err)
 		return
+	}
+}
+
+func (b BrowserHandlerFunc) handleError(rw ResponseWriter, r *http.Request, err error) {
+	errh, ok := internal.UnwrapResponseWriterTo[httperror.ResponseWriter](rw)
+	if ok {
+		errh.WriteError(err)
+	} else {
+		httperror.DefaultErrorHandler(rw, r, err)
 	}
 }

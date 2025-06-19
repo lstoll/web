@@ -147,8 +147,7 @@ func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
 		for _, opt := range opts {
 			r = opt(r)
 		}
-		brw := newResponseWriter(w, r, s)
-		h.ServeHTTP(brw, r)
+		h.ServeHTTP(newResponseWriter(w), r)
 	}))
 }
 

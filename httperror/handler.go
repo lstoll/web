@@ -25,6 +25,8 @@ func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	var he HTTPError
 	isHttpError := errors.As(err, &he)
 
+	slog.ErrorContext(r.Context(), "error in web handler", "err", err, "path", r.URL.Path)
+
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		code := http.StatusInternalServerError
@@ -54,7 +56,7 @@ func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	if isHttpError {
-		http.Error(w, he.Error(), he.Code())
+		http.Error(w, http.StatusText(he.Code()), he.Code())
 		return
 	}
 

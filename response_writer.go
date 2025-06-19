@@ -7,35 +7,32 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/lstoll/web/httperror"
 	"github.com/lstoll/web/internal"
 )
 
 // newResponseWriter creates a new ResponseWriter
-func newResponseWriter(w http.ResponseWriter, r *http.Request, s *Server) ResponseWriter {
+func newResponseWriter(w http.ResponseWriter) ResponseWriter {
 	return &responseWriter{
 		ResponseWriter: w,
-		r:              r,
-		server:         s,
 	}
 }
 
 type ResponseWriter interface {
 	http.ResponseWriter
-	WriteError(err error) error
-	WriteResponse(resp BrowserResponse) error
+	WriteResponse(r *Request, resp BrowserResponse) error
 }
 
-var _ ResponseWriter = (*responseWriter)(nil)
+var (
+	_ ResponseWriter                     = (*responseWriter)(nil)
+	_ internal.UnwrappableResponseWriter = (*responseWriter)(nil)
+)
 
 type responseWriter struct {
 	http.ResponseWriter
-	r       *http.Request
-	server  *Server
 	handled bool
 }
 
-func (w *responseWriter) WriteResponse(resp BrowserResponse) error {
+func (w *responseWriter) WriteResponse(r *Request, resp BrowserResponse) error {
 	if w.handled {
 		return fmt.Errorf("response already written")
 	}
@@ -49,21 +46,25 @@ func (w *responseWriter) WriteResponse(resp BrowserResponse) error {
 	// Handle different response types
 	switch resp := resp.(type) {
 	case *TemplateResponse:
-		return w.writeTemplateResponse(resp)
+		return w.writeTemplateResponse(r, resp)
 	case *JSONResponse:
 		return w.writeJSONResponse(resp)
 	case *NilResponse:
 		// Do nothing, should be handled already
 		return nil
 	case *RedirectResponse:
-		return w.writeRedirectResponse(resp)
+		return w.writeRedirectResponse(r, resp)
 	default:
 		return fmt.Errorf("unhandled browser response type: %T", resp)
 	}
 }
 
-func (w *responseWriter) writeTemplateResponse(resp *TemplateResponse) error {
-	t := resp.Templates.Funcs(TemplateFuncs(w.r, resp.Funcs))
+func (w *responseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *responseWriter) writeTemplateResponse(req *Request, resp *TemplateResponse) error {
+	t := resp.Templates.Funcs(TemplateFuncs(req.r, resp.Funcs))
 
 	// Buffer the render to capture errors before writing
 	var buf bytes.Buffer
@@ -81,26 +82,11 @@ func (w *responseWriter) writeJSONResponse(resp *JSONResponse) error {
 	return json.NewEncoder(w).Encode(resp.Data)
 }
 
-func (w *responseWriter) writeRedirectResponse(resp *RedirectResponse) error {
+func (w *responseWriter) writeRedirectResponse(req *Request, resp *RedirectResponse) error {
 	code := resp.Code
 	if code == 0 {
 		code = http.StatusSeeOther
 	}
-	http.Redirect(w, w.r, resp.URL, code)
-	return nil
-}
-
-func (w *responseWriter) WriteError(err error) error {
-	w.handled = true
-
-	// if we're wrapped by the httperror handler, use that to handle the error.
-	erw, ok := internal.UnwrapResponseWriterTo[httperror.ResponseWriter](w)
-	if ok {
-		erw.WriteError(err)
-		return nil
-	}
-
-	// if we're not wrapped, use the default error handler.
-	httperror.DefaultErrorHandler(w, w.r, err)
+	http.Redirect(w, req.r, resp.URL, code)
 	return nil
 }

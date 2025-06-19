@@ -48,7 +48,7 @@ func TestServer(t *testing.T) {
 	}
 
 	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
-		return rw.WriteResponse(&TemplateResponse{
+		return rw.WriteResponse(br, &TemplateResponse{
 			Templates: tmpl,
 			Name:      "test",
 			Data:      "world",
@@ -56,7 +56,7 @@ func TestServer(t *testing.T) {
 	}))
 
 	svr.Handle("/json", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
-		return rw.WriteResponse(&JSONResponse{
+		return rw.WriteResponse(br, &JSONResponse{
 			Data: map[string]any{"hello": "world"},
 		})
 	}))
@@ -91,7 +91,7 @@ func TestServer(t *testing.T) {
 			name:       "error",
 			path:       "/err",
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   "http error 500: Internal Server Error\n\n",
+			wantBody:   "Internal Server Error\n",
 		},
 		{
 			name:       "raw",
