@@ -202,9 +202,96 @@ func TestCompareSpecificity(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := compareSpecificity(tc.p1, tc.p2)
+			req := &http.Request{Method: "GET", Host: "example.com"}
+			if tc.name == "Host rule wins over segments" {
+				req.Host = "api.com"
+			}
+			got := compareSpecificity(tc.p1, tc.p2, req)
 			if got != tc.want {
 				t.Errorf("compareSpecificity(%q, %q) = %d; want %d", tc.p1, tc.p2, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCompareSpecificityWithRequest(t *testing.T) {
+	testCases := []struct {
+		name    string
+		p1      string
+		p2      string
+		req     *http.Request
+		want    int // +1 for p1, -1 for p2, 0 for equal
+		reverse bool
+	}{
+		{
+			name: "Method match vs no method",
+			p1:   "GET /path",
+			p2:   "/path",
+			req:  httptest.NewRequest("GET", "/path", nil),
+			want: 1,
+		},
+		{
+			name: "Host match vs no host",
+			p1:   "example.com/path",
+			p2:   "/path",
+			req:  httptest.NewRequest("GET", "https://example.com/path", nil),
+			want: 1,
+		},
+		{
+			name: "Host match is better than method match",
+			p1:   "example.com/path",
+			p2:   "POST /path",
+			req:  httptest.NewRequest("POST", "https://example.com/path", nil),
+			want: 1,
+		},
+		{
+			name: "Exact method match vs other method",
+			p1:   "GET /path",
+			p2:   "POST /path",
+			req:  httptest.NewRequest("GET", "/path", nil),
+			want: 1,
+		},
+		{
+			name: "Path specificity still wins with host",
+			p1:   "example.com/a/b",
+			p2:   "example.com/a",
+			req:  httptest.NewRequest("GET", "https://example.com/a/b", nil),
+			want: 1,
+		},
+		{
+			name: "Path specificity still wins with method",
+			p1:   "GET /a/b",
+			p2:   "GET /a",
+			req:  httptest.NewRequest("GET", "/a/b", nil),
+			want: 1,
+		},
+		{
+			name: "Host presence vs no host (non-matching request host)",
+			p1:   "api.com/a",
+			p2:   "/a/b", // same segment count
+			req:  httptest.NewRequest("GET", "https://other.com/a/b", nil),
+			want: 1, // p1 has a host, so it's more specific
+		},
+		{
+			name: "Catch-all wildcard vs named wildcard",
+			p1:   "/users/{id}",
+			p2:   "/users/{$}",
+			req:  httptest.NewRequest("GET", "/users/123", nil),
+			want: 1, // {id} is more specific than {$}
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := compareSpecificity(tc.p1, tc.p2, tc.req)
+			if got != tc.want {
+				t.Errorf("compareSpecificity(%q, %q) = %d; want %d", tc.p1, tc.p2, got, tc.want)
+			}
+
+			// Run the reverse case to ensure symmetry
+			got = compareSpecificity(tc.p2, tc.p1, tc.req)
+			if got != -tc.want {
+				t.Errorf("compareSpecificity(%q, %q) = %d; want %d", tc.p2, tc.p1, got, -tc.want)
 			}
 		})
 	}

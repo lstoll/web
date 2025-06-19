@@ -170,7 +170,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.BaseMiddleware.Handler(rh).ServeHTTP(w, r)
 		return
 	case bp != "" && rp != "":
-		switch compareSpecificity(bp, rp) {
+		switch compareSpecificity(bp, rp, r) {
 		case 1:
 			s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(bh)).ServeHTTP(w, r)
 			return
@@ -192,24 +192,35 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// compareSpecificity determines the relative specificity of two patterns.
-// It returns:
+// compareSpecificity determines the relative specificity of two patterns. It
+// returns:
 //
 //	+1 if pattern1 is more specific than pattern2
 //	-1 if pattern2 is more specific than pattern1
 //	 0 if they have equal specificity
-func compareSpecificity(pattern1, pattern2 string) int {
+func compareSpecificity(pattern1, pattern2 string, r *http.Request) int {
 	if pattern1 == pattern2 {
 		return 0
 	}
 
 	// Rule 1: Host specificity
-	host1 := hasHost(pattern1)
-	host2 := hasHost(pattern2)
-	if host1 && !host2 {
+	hostMatch1 := patternMatchesHost(pattern1, r)
+	hostMatch2 := patternMatchesHost(pattern2, r)
+	if hostMatch1 && !hostMatch2 {
 		return 1
 	}
-	if !host1 && host2 {
+	if !hostMatch1 && hostMatch2 {
+		return -1
+	}
+
+	// If neither matches the request host, or both do, a pattern that has a
+	// host is more specific.
+	hasHost1 := hasHost(pattern1)
+	hasHost2 := hasHost(pattern2)
+	if hasHost1 && !hasHost2 {
+		return 1
+	}
+	if !hasHost1 && hasHost2 {
 		return -1
 	}
 
@@ -217,10 +228,23 @@ func compareSpecificity(pattern1, pattern2 string) int {
 	method2, path2 := splitPattern(pattern2)
 
 	// Rule 2: Method specificity
-	if method1 != "" && method2 == "" {
+	// Exact match to request method is most specific
+	methodMatch1 := method1 == r.Method
+	methodMatch2 := method2 == r.Method
+	if methodMatch1 && !methodMatch2 {
 		return 1
 	}
-	if method1 == "" && method2 != "" {
+	if !methodMatch1 && methodMatch2 {
+		return -1
+	}
+
+	// A method is better than no method
+	hasMethod1 := method1 != ""
+	hasMethod2 := method2 != ""
+	if hasMethod1 && !hasMethod2 {
+		return 1
+	}
+	if !hasMethod1 && hasMethod2 {
 		return -1
 	}
 
@@ -235,6 +259,16 @@ func compareSpecificity(pattern1, pattern2 string) int {
 	}
 
 	// Rule 4: Wildcard count (if segment counts are equal)
+	// First, check for catch-all wildcards. Non-catch-all is more specific.
+	isCatchAll1 := strings.HasSuffix(path1, "{$}")
+	isCatchAll2 := strings.HasSuffix(path2, "{$}")
+	if !isCatchAll1 && isCatchAll2 {
+		return 1
+	}
+	if isCatchAll1 && !isCatchAll2 {
+		return -1
+	}
+
 	wildcards1 := strings.Count(path1, "{")
 	wildcards2 := strings.Count(path2, "{")
 	if wildcards1 < wildcards2 {
@@ -275,4 +309,19 @@ func hasHost(pattern string) bool {
 	// e.g., "example.com/path" contains "/" but doesn't start with "/" -> has host
 	// e.g., "/path" contains "/" and starts with "/" -> no host
 	return strings.Contains(pathPart, "/") && !strings.HasPrefix(pathPart, "/")
+}
+
+// patternMatchesHost checks if the host in the pattern matches the request's
+// host. If the pattern does not contain a host, it does not match.
+func patternMatchesHost(pattern string, r *http.Request) bool {
+	// We only care about the part after a potential method.
+	_, pathPart := splitPattern(pattern)
+
+	// A pattern has a host if it contains a slash but doesn't start with one.
+	if !strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "/") {
+		return false
+	}
+	patternHost := strings.SplitN(pathPart, "/", 2)[0]
+
+	return r.Host == patternHost
 }
