@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/lstoll/web/internal"
 )
 
@@ -79,7 +80,7 @@ func TestHandler(t *testing.T) {
 				http.Error(w, "not found", http.StatusNotFound)
 			}),
 			wantCode: http.StatusNotFound,
-			wantBody: "http error 404: not found\n\n",
+			wantBody: "Not Found\n",
 		},
 		{
 			name: "custom error handler",
@@ -118,7 +119,7 @@ func TestHandler(t *testing.T) {
 				erw.WriteError(New(http.StatusUnauthorized, "Unauthorized"))
 			}),
 			wantCode: http.StatusUnauthorized,
-			wantBody: "http error 401: Unauthorized\n",
+			wantBody: "Unauthorized\n",
 		},
 		{
 			name: "httperror.ResponseWriter wrapped",
@@ -132,7 +133,7 @@ func TestHandler(t *testing.T) {
 				erw.WriteError(New(http.StatusUnauthorized, "Unauthorized"))
 			}),
 			wantCode: http.StatusUnauthorized,
-			wantBody: "http error 401: Unauthorized\n",
+			wantBody: "Unauthorized\n",
 		},
 	}
 
@@ -160,8 +161,8 @@ func TestHandler(t *testing.T) {
 				if rec.Code != tt.wantCode {
 					t.Errorf("status code = %v, want %v", rec.Code, tt.wantCode)
 				}
-				if rec.Body.String() != tt.wantBody {
-					t.Errorf("body = %v, want %v", rec.Body.String(), tt.wantBody)
+				if diff := cmp.Diff(tt.wantBody, rec.Body.String()); diff != "" {
+					t.Error(diff)
 				}
 			}
 		})
