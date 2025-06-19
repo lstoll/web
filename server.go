@@ -5,10 +5,12 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/csrf"
 	"github.com/lstoll/web/httperror"
+	"github.com/lstoll/web/middleware"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/requestlog"
 	"github.com/lstoll/web/session"
@@ -16,6 +18,16 @@ import (
 )
 
 const staticPrefix = "/static/"
+
+const (
+	MiddlewareCSPName        = "csp"
+	MiddlewareCSRFName       = "csrf"
+	MiddlewareRequestIDName  = "requestid"
+	MiddlewareRequestLogName = "requestlog"
+	MiddlewareSessionName    = "session"
+	MiddlewareErrorName      = "error"
+	MiddlewareStaticName     = "static"
+)
 
 var DefaultCSPOpts = []csp.HandlerOpt{
 	csp.DefaultSrc(`'none'`),
@@ -45,9 +57,6 @@ type Config struct {
 	// ScriptNonce indicates that a nonce should be used for inline styles. This
 	// will update the CSP, and the template func will return a value.
 	StyleNonce bool
-	// Mux that handlers will mount on. If nil, a new mux will be created. If an
-	// existing mux is passed, a handler for the static content will be added.
-	Mux *http.ServeMux
 	// AdditionalBrowserMiddleware is a set of middleware that will be added to
 	// all browser handlers, after the base middleware.
 	AdditionalBrowserMiddleware []func(http.Handler) http.Handler
@@ -60,9 +69,6 @@ func NewServer(c *Config) (*Server, error) {
 	if c.CSPOpts == nil {
 		c.CSPOpts = DefaultCSPOpts
 	}
-	if c.Mux == nil {
-		c.Mux = http.NewServeMux()
-	}
 	if c.ErrorHandler == nil {
 		c.ErrorHandler = httperror.DefaultErrorHandler
 	}
@@ -72,80 +78,77 @@ func NewServer(c *Config) (*Server, error) {
 		return nil, fmt.Errorf("creating static handler: %w", err)
 	}
 
-	webMiddleware := []func(http.Handler) http.Handler{}
-
 	csrfHandler := c.CSRFHandler
 	if csrfHandler == nil {
 		csrfHandler = csrf.New().Handler
 	}
-	webMiddleware = append(webMiddleware, csrfHandler)
 
 	cspHandler := csp.NewHandler(*c.BaseURL, c.CSPOpts...)
-	webMiddleware = append(webMiddleware, cspHandler.Wrap)
-
-	// set the static handler in the context, so we can use it to build paths in
-	// templates.
-	webMiddleware = append(webMiddleware, func(h http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r = r.WithContext(contextWithStaticHandler(r.Context(), sh))
-			h.ServeHTTP(w, r)
-		})
-	})
 
 	loghandler := &requestlog.RequestLogger{
 		// TODO - pass in something?
 	}
 
-	baseMiddleware := []func(http.Handler) http.Handler{
-		func(h http.Handler) http.Handler {
-			// TODO - make requestID be a normal middleware
-			return requestid.Handler(true, h)
-		},
-		loghandler.Handler,
-	}
-
 	svr := &Server{
-		config:                   c,
-		staticHandler:            sh,
-		mux:                      c.Mux,
-		baseMiddleware:           baseMiddleware,
-		invokeWithBaseMiddleware: buildMiddlewareChain(baseMiddleware),
-		invokeWithWebMiddleware:  buildMiddlewareChain(webMiddleware),
+		config:            c,
+		staticHandler:     sh,
+		BrowserMux:        http.NewServeMux(),
+		RawMux:            http.NewServeMux(),
+		BrowserMiddleware: &middleware.Chain{},
+		BaseMiddleware:    &middleware.Chain{},
 	}
 
-	c.Mux.Handle("/static/", svr.invokeWithBaseMiddleware(svr.staticHandler))
+	svr.BaseMiddleware.Append(MiddlewareRequestIDName, func(h http.Handler) http.Handler {
+		// TODO - make requestID be a normal middleware
+		return requestid.Handler(true, h)
+	})
+	svr.BaseMiddleware.Append(MiddlewareRequestLogName, loghandler.Handler)
+	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{}).Handle)
+
+	svr.BrowserMiddleware.Append(MiddlewareStaticName, func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// set the static handler in the context, so we can use it to build paths in
+			// templates.
+			r = r.WithContext(contextWithStaticHandler(r.Context(), sh))
+			h.ServeHTTP(w, r)
+		})
+	})
+	svr.BrowserMiddleware.Append(MiddlewareCSPName, cspHandler.Wrap)
+	svr.BrowserMiddleware.Append(MiddlewareCSRFName, csrfHandler)
+	if c.SessionManager != nil {
+		svr.BrowserMiddleware.Append(MiddlewareSessionName, c.SessionManager.Wrap)
+	}
+
+	svr.RawMux.Handle("/static/", svr.staticHandler)
 
 	return svr, nil
 }
 
 type Server struct {
-	config        *Config
-	mux           *http.ServeMux
-	staticHandler *static.FileHandler
+	BrowserMux        *http.ServeMux
+	BrowserMiddleware *middleware.Chain
 
-	baseMiddleware []func(http.Handler) http.Handler
-	// invokeWithBaseMiddleware is a pre-built function that applies the base middleware chain
-	invokeWithBaseMiddleware func(http.Handler) http.Handler
-	// invokeWithWebMiddleware is a pre-built function that applies the web middleware chain
-	invokeWithWebMiddleware func(http.Handler) http.Handler
+	RawMux *http.ServeMux
+
+	BaseMiddleware *middleware.Chain
+
+	HTTPServer *http.Server
+
+	config        *Config
+	staticHandler *static.FileHandler
 }
 
 func (s *Server) HandleRaw(pattern string, handler http.Handler) {
-	s.mux.Handle(pattern, s.invokeWithBaseMiddleware(handler))
+	s.RawMux.Handle(pattern, handler)
 }
 
 func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
-	s.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s.BrowserMux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, opt := range opts {
 			r = opt(r)
 		}
-		// TODO - re-think how we construct middleware and call handlers. We
-		// need the brw construction to be at the end, or to not require a
-		// request (but hand the render method take it perhaps?)
-		s.invokeWithWebMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			brw := newResponseWriter(w, r, s)
-			h.ServeHTTP(brw, r)
-		})).ServeHTTP(w, r)
+		brw := newResponseWriter(w, r, s)
+		h.ServeHTTP(brw, r)
 	}))
 }
 
@@ -154,14 +157,122 @@ func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	bh, bp := s.BrowserMux.Handler(r)
+	rh, rp := s.RawMux.Handler(r)
+
+	switch {
+	case bp != "" && rp == "":
+		// browser path only
+		s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(bh)).ServeHTTP(w, r)
+		return
+	case bp == "" && rp != "":
+		// raw path only
+		s.BaseMiddleware.Handler(rh).ServeHTTP(w, r)
+		return
+	case bp != "" && rp != "":
+		switch compareSpecificity(bp, rp) {
+		case 1:
+			s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(bh)).ServeHTTP(w, r)
+			return
+		case -1:
+			s.BaseMiddleware.Handler(rh).ServeHTTP(w, r)
+			return
+		default:
+			// TODO - error handler for this too?
+			s.BaseMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Duplicate route", http.StatusInternalServerError)
+			})).ServeHTTP(w, r)
+			return
+		}
+	default:
+		// not found
+		// TODO - call the error handler directly?
+		s.BaseMiddleware.Handler(http.NotFoundHandler()).ServeHTTP(w, r)
+		return
+	}
 }
 
-func buildMiddlewareChain(chain []func(http.Handler) http.Handler) func(http.Handler) http.Handler {
-	return func(h http.Handler) http.Handler {
-		for i := len(chain) - 1; i >= 0; i-- {
-			h = chain[i](h)
-		}
-		return h
+// compareSpecificity determines the relative specificity of two patterns.
+// It returns:
+//
+//	+1 if pattern1 is more specific than pattern2
+//	-1 if pattern2 is more specific than pattern1
+//	 0 if they have equal specificity
+func compareSpecificity(pattern1, pattern2 string) int {
+	if pattern1 == pattern2 {
+		return 0
 	}
+
+	// Rule 1: Host specificity
+	host1 := hasHost(pattern1)
+	host2 := hasHost(pattern2)
+	if host1 && !host2 {
+		return 1
+	}
+	if !host1 && host2 {
+		return -1
+	}
+
+	method1, path1 := splitPattern(pattern1)
+	method2, path2 := splitPattern(pattern2)
+
+	// Rule 2: Method specificity
+	if method1 != "" && method2 == "" {
+		return 1
+	}
+	if method1 == "" && method2 != "" {
+		return -1
+	}
+
+	// Rule 3: Path segment count
+	segments1 := countSegments(path1)
+	segments2 := countSegments(path2)
+	if segments1 > segments2 {
+		return 1
+	}
+	if segments1 < segments2 {
+		return -1
+	}
+
+	// Rule 4: Wildcard count (if segment counts are equal)
+	wildcards1 := strings.Count(path1, "{")
+	wildcards2 := strings.Count(path2, "{")
+	if wildcards1 < wildcards2 {
+		return 1
+	}
+	if wildcards1 > wildcards2 {
+		return -1
+	}
+
+	return 0
+}
+
+// splitPattern is the same helper function as before.
+func splitPattern(pattern string) (method, path string) {
+	if parts := strings.SplitN(pattern, " ", 2); len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", pattern
+}
+
+// countSegments counts the number of non-empty parts in a URL path.
+// e.g., "/api/v1" -> 2, "/users/" -> 1, "/" -> 0
+func countSegments(path string) int {
+	// Trim leading/trailing slashes to handle cases like "/" or "/users/" consistently
+	trimmedPath := strings.Trim(path, "/")
+	if trimmedPath == "" {
+		return 0
+	}
+	return strings.Count(trimmedPath, "/") + 1
+}
+
+// hasHost correctly determines if a pattern includes a host.
+func hasHost(pattern string) bool {
+	// We only care about the part after a potential method.
+	_, pathPart := splitPattern(pattern)
+
+	// A pattern has a host if it contains a slash but doesn't start with one.
+	// e.g., "example.com/path" contains "/" but doesn't start with "/" -> has host
+	// e.g., "/path" contains "/" and starts with "/" -> no host
+	return strings.Contains(pathPart, "/") && !strings.HasPrefix(pathPart, "/")
 }

@@ -19,14 +19,7 @@ import (
 )
 
 func TestTemplateFuncs(t *testing.T) {
-	sm, err := session.NewKVManager(session.NewMemoryKV(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	sfs := os.DirFS("static/testdata")
-	if err != nil {
-		t.Fatal(err)
-	}
 	sh, err := static.NewFileHandler(sfs, "/static")
 	if err != nil {
 		t.Fatal(err)
@@ -49,10 +42,8 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 	}
 
 	base, _ := url.Parse("https://example.com")
-
 	svr, err := NewServer(&Config{
-		BaseURL:        base,
-		SessionManager: sm,
+		BaseURL: base,
 		// Templates:      tmpl,
 		Static:      sfs, // TODO
 		ScriptNonce: true,

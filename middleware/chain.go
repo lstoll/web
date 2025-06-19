@@ -76,6 +76,9 @@ func (c *Chain) List() []string {
 // Handler returns a new handler that applies the middleware chain to the
 // provided handler.
 func (c *Chain) Handler(h http.Handler) http.Handler {
+	if c == nil || len(c.handlers) == 0 {
+		return h
+	}
 	for i := len(c.handlers) - 1; i >= 0; i-- {
 		h = c.handlers[i].Handler(h)
 	}

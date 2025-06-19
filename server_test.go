@@ -91,7 +91,7 @@ func TestServer(t *testing.T) {
 			name:       "error",
 			path:       "/err",
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   "Internal Server Error\n",
+			wantBody:   "http error 500: Internal Server Error\n\n",
 		},
 		{
 			name:       "raw",
@@ -138,6 +138,73 @@ func TestServer(t *testing.T) {
 
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestCompareSpecificity(t *testing.T) {
+	testCases := []struct {
+		name string
+		p1   string
+		p2   string
+		want int // +1 for p1, -1 for p2, 0 for equal
+	}{
+		// --- Equality ---
+		{name: "Identical patterns", p1: "/users/{id}", p2: "/users/{id}", want: 0},
+
+		// --- Rule 1: Host Specificity ---
+		{name: "Host vs No Host", p1: "api.example.com/users", p2: "/users", want: 1},
+		{name: "No Host vs Host", p1: "/users", p2: "api.example.com/users", want: -1},
+
+		// --- Rule 2: Method Specificity ---
+		{name: "Method vs No Method", p1: "GET /users", p2: "/users", want: 1},
+		{name: "No Method vs Method", p1: "/users", p2: "POST /users", want: -1},
+
+		// --- Rule 3: Path Segments ---
+		{name: "More segments vs fewer", p1: "/users/profiles/settings", p2: "/users/profiles/", want: 1},
+		{name: "Fewer segments vs more", p1: "/users/", p2: "/users/profiles", want: -1},
+		{name: "Host rule wins over segments", p1: "api.com/a", p2: "/a/b/c/d", want: 1},
+		{name: "Method rule wins over segments", p1: "GET /a", p2: "/a/b/c/d", want: 1},
+
+		// --- Path Segment vs String Length ---
+		{
+			name: "Segment count is higher, but string length is shorter",
+			p1:   "/a/b",  // 2 segments, len 4
+			p2:   "/user", // 1 segment, len 5
+			want: 1,       // p1 is more specific
+		},
+		{
+			name: "Segment count is lower, but string length is longer",
+			p1:   "/longname", // 1 segment, len 9
+			p2:   "/a/b/c",    // 3 segments, len 6
+			want: -1,          // p2 is more specific
+		},
+		{
+			name: "Equal segments with different lengths",
+			p1:   "/longname", // 1 segment
+			p2:   "/short",    // 1 segment
+			want: 0,           // Equal specificity by this rule
+		},
+		{
+			name: "Trailing slash vs no trailing slash (equal segments)",
+			p1:   "/a/b/",
+			p2:   "/a/b",
+			want: 0,
+		},
+
+		// --- Rule 4: Wildcard Specificity ---
+		{name: "Exact vs Wildcard (equal segments)", p1: "/users/123", p2: "/users/{id}", want: 1},
+		{name: "Wildcard vs Exact (equal segments)", p1: "/users/{id}", p2: "/users/123", want: -1},
+		{name: "Fewer wildcards vs more (equal segments)", p1: "/users/{id}/profile", p2: "/users/{id}/{action}", want: 1},
+		{name: "Special {$}", p1: "/users/{$}", p2: "/users/", want: 1},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := compareSpecificity(tc.p1, tc.p2)
+			if got != tc.want {
+				t.Errorf("compareSpecificity(%q, %q) = %d; want %d", tc.p1, tc.p2, got, tc.want)
 			}
 		})
 	}
