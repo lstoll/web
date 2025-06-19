@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/lstoll/web/session"
+	"github.com/lstoll/web/static"
 )
 
 func TestTemplateFuncs(t *testing.T) {
@@ -21,13 +23,24 @@ func TestTemplateFuncs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sfs := os.DirFS("static/testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh, err := static.NewFileHandler(sfs, "/static")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	tmpl, err := template.New("test").Funcs(BaseFuncMap).Parse(`{{define "test"}}
+	ctx, _ := session.TestContext(t.Context(), nil)
+	ctx = contextWithStaticHandler(ctx, sh)
+	r := httptest.NewRequest("GET", "/test", nil)
+	r = r.WithContext(ctx)
+
+	tmpl, err := template.New("test").Funcs(TemplateFuncs(r, nil)).Parse(`{{define "test"}}
 HasFlash: {{HasFlash}}
 FlashIsError: {{FlashIsError}}
 FlashMessage: {{FlashMessage}}
-CRSFField: {{CSRFField}}
-CSRFToken: {{CSRFToken}}
 StaticPath: {{StaticPath "subdir/file2.txt"}}
 ScriptNonceAttr: {{ScriptNonceAttr}}
 {{end}}`)
@@ -41,7 +54,7 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 		BaseURL:        base,
 		SessionManager: sm,
 		// Templates:      tmpl,
-		Static:      nil, // TODO
+		Static:      sfs, // TODO
 		ScriptNonce: true,
 	})
 	if err != nil {
@@ -57,7 +70,7 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 
 	tests := []struct {
 		name    string
-		session any
+		session map[string]any
 		want    string
 	}{
 		{
@@ -66,28 +79,24 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 HasFlash: false
 FlashIsError: false
 FlashMessage:
-CRSFField: <input id="csrf_token" type="hidden" name="csrf_token" value="">
-CSRFToken:
-StaticPath: /static/subdir/file2.txt?sum=687830f0aa1e6225
+StaticPath: /static/subdir/file2.687830f0.txt
 ScriptNonceAttr: %s
 `,
 		},
-		/*{ // TODO
-					name: "flash error",
-					session: &testSession{
-						flashIsError: true,
-						flashMessage: "an error occurred",
-					},
-					want: `
+		{
+			name: "flash error",
+			session: map[string]any{
+				"__flash_is_error": true, // TODO - test shouldn't need to know internals
+				"__flash":          "an error occurred",
+			},
+			want: `
 		HasFlash: true
 		FlashIsError: true
 		FlashMessage: an error occurred
-		CRSFField: <input id="csrf_token" type="hidden" name="csrf_token" value="">
-		CSRFToken:
-		StaticPath: /static/subdir/file2.txt?sum=687830f0aa1e6225
+		StaticPath: /static/subdir/file2.687830f0.txt
 		ScriptNonceAttr: %s
 		`,
-				},*/
+		},
 	}
 
 	for _, tt := range tests {
@@ -102,8 +111,8 @@ ScriptNonceAttr: %s
 			req.Header.Set("Sec-Fetch-Mode", "navigate")
 			req.Header.Set("Sec-Fetch-Dest", "document")
 
-			// ctx, _ := session.TestContext(sm, req.Context(), tt.session)
-			// req = req.WithContext(ctx)
+			ctx, _ := session.TestContext(req.Context(), tt.session)
+			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
 			svr.ServeHTTP(rr, req)
@@ -111,6 +120,8 @@ ScriptNonceAttr: %s
 			if rr.Code != http.StatusOK {
 				t.Errorf("want status %d, got %d", http.StatusOK, rr.Code)
 			}
+
+			t.Logf("body: %s", rr.Body.String())
 
 			// Now we only need to extract the script nonce
 			re := regexp.MustCompile(`(?m)^ScriptNonceAttr:\s*(\S+)`)

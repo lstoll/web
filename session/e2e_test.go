@@ -55,7 +55,7 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 
 		// Log the key/value being set for debugging
 		t.Logf("Setting session key=%s, value=%s", key, value)
-		sess := FromContext(r.Context())
+		sess := MustFromContext(r.Context())
 		sess.Set(key, value)
 	})
 
@@ -69,7 +69,7 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 		sessCtx := r.Context().Value(sessionContextKey{}).(*sessCtx)
 		t.Logf("Session data in context: %+v", sessCtx.data)
 
-		sess := FromContext(r.Context())
+		sess := MustFromContext(r.Context())
 		value, ok := sess.Get(key).(string)
 		if !ok {
 			t.Logf("Key %s not found in session or not a string: %v", key, sess.Get(key))
@@ -82,13 +82,13 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 
 	if testReset {
 		mux.HandleFunc("GET /reset", func(w http.ResponseWriter, r *http.Request) {
-			sess := FromContext(r.Context())
+			sess := MustFromContext(r.Context())
 			sess.Reset()
 		})
 	}
 
 	mux.HandleFunc("GET /clear", func(w http.ResponseWriter, r *http.Request) {
-		sess := FromContext(r.Context())
+		sess := MustFromContext(r.Context())
 		sess.Delete()
 	})
 

@@ -16,9 +16,8 @@ type Request struct {
 }
 
 // Session returns the session associated with this request.
-// It provides access to session data via Get/Set methods.
 func (b *Request) Session() session.Session {
-	return session.FromContext(b.r.Context())
+	return session.MustFromContext(b.r.Context())
 }
 
 func (b *Request) PostForm() url.Values {

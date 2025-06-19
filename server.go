@@ -60,10 +60,8 @@ func NewServer(c *Config) (*Server, error) {
 	if c.CSPOpts == nil {
 		c.CSPOpts = DefaultCSPOpts
 	}
-	var mountStatic = true
 	if c.Mux == nil {
 		c.Mux = http.NewServeMux()
-		mountStatic = false
 	}
 	if c.ErrorHandler == nil {
 		c.ErrorHandler = httperror.DefaultErrorHandler
@@ -81,8 +79,10 @@ func NewServer(c *Config) (*Server, error) {
 		ch := http.NewCrossOriginProtection()
 		csrfHandler = csrf.NewHandler(ch).Handler
 	}
-
 	webMiddleware = append(webMiddleware, csrfHandler)
+
+	cspHandler := csp.NewHandler(*c.BaseURL, c.CSPOpts...)
+	webMiddleware = append(webMiddleware, cspHandler.Wrap)
 
 	// set the static handler in the context, so we can use it to build paths in
 	// templates.
@@ -114,9 +114,7 @@ func NewServer(c *Config) (*Server, error) {
 		invokeWithWebMiddleware:  buildMiddlewareChain(webMiddleware),
 	}
 
-	if mountStatic {
-		c.Mux.Handle("/static/", svr)
-	}
+	c.Mux.Handle("/static/", svr.invokeWithBaseMiddleware(svr.staticHandler))
 
 	return svr, nil
 }
@@ -142,7 +140,13 @@ func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
 		for _, opt := range opts {
 			r = opt(r)
 		}
-		s.invokeWithWebMiddleware(h).ServeHTTP(w, r)
+		// TODO - re-think how we construct middleware and call handlers. We
+		// need the brw construction to be at the end, or to not require a
+		// request (but hand the render method take it perhaps?)
+		s.invokeWithWebMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			brw := newResponseWriter(w, r, s)
+			h.ServeHTTP(brw, r)
+		})).ServeHTTP(w, r)
 	}))
 }
 
@@ -151,9 +155,7 @@ func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO - errors etc.
-	brw := newResponseWriter(w, r, s)
-	s.mux.ServeHTTP(brw, r)
+	s.mux.ServeHTTP(w, r)
 }
 
 func buildMiddlewareChain(chain []func(http.Handler) http.Handler) func(http.Handler) http.Handler {

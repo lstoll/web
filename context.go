@@ -12,6 +12,7 @@ func contextWithStaticHandler(ctx context.Context, sh *static.FileHandler) conte
 	return context.WithValue(ctx, staticHandlerCtxKey{}, sh)
 }
 
-func staticHandlerFromContext(ctx context.Context) *static.FileHandler {
-	return ctx.Value(staticHandlerCtxKey{}).(*static.FileHandler)
+func staticHandlerFromContext(ctx context.Context) (*static.FileHandler, bool) {
+	sh, ok := ctx.Value(staticHandlerCtxKey{}).(*static.FileHandler)
+	return sh, ok
 }

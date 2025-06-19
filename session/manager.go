@@ -12,14 +12,24 @@ import (
 	"time"
 )
 
-// FromContext returns the Session from the given context.
-// It panics if no session exists in the context.
-func FromContext(ctx context.Context) Session {
+// FromContext returns the Session from the given context. It panics if no
+// session exists in the context.
+func FromContext(ctx context.Context) (Session, bool) {
 	sessCtx, ok := ctx.Value(sessionContextKey{}).(*sessCtx)
+	if !ok {
+		return nil, false
+	}
+	return sessCtx, true
+}
+
+// MustFromContext returns the Session from the given context. It panics if no
+// session exists in the context.
+func MustFromContext(ctx context.Context) Session {
+	sess, ok := FromContext(ctx)
 	if !ok {
 		panic("no session in context")
 	}
-	return sessCtx
+	return sess
 }
 
 // sessionMetadata tracks additional information for the session manager to use,

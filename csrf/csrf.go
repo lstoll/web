@@ -28,6 +28,6 @@ func (hh *Handler) Handler(h http.Handler) http.Handler {
 			h.ServeHTTP(w, r)
 			return
 		}
-		hh.Handler(h).ServeHTTP(w, r)
+		hh.CrossOriginProtection.Handler(h).ServeHTTP(w, r)
 	})
 }

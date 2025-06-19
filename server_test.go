@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/session"
 )
 
@@ -28,9 +30,18 @@ func TestServer(t *testing.T) {
 	}
 
 	svr, err := NewServer(&Config{
+		CSPOpts: []csp.HandlerOpt{
+			csp.DefaultSrc(`'none'`),
+			csp.ScriptSrc(`'self' 'unsafe-inline'`),
+			csp.StyleSrc(`'self' 'unsafe-inline'`),
+			csp.ImgSrc(`'self'`),
+			csp.ConnectSrc(`'self'`),
+			csp.FontSrc(`'self'`),
+			csp.BaseURI(`'self'`),
+			csp.FrameAncestors(`'none'`)},
 		BaseURL:        base,
 		SessionManager: sm,
-		Static:         nil, // TODO
+		Static:         os.DirFS("static/testdata"),
 	})
 	if err != nil {
 		t.Fatal(err)

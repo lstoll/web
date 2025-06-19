@@ -19,9 +19,9 @@ var (
 	extractorsLock sync.RWMutex
 )
 
-// RegisterAttributeExtractor registers a new attribute extractor function with the given name.
-// If an extractor with the same name already exists, it will be replaced.
-// This function is safe to call from init() functions.
+// RegisterAttributeExtractor registers a new attribute extractor function with
+// the given name. If an extractor with the same name already exists, it will be
+// replaced. This function is safe to call from init() functions.
 func RegisterAttributeExtractor(name string, extractor AttributeExtractor) {
 	extractorsLock.Lock()
 	defer extractorsLock.Unlock()
@@ -31,8 +31,9 @@ func RegisterAttributeExtractor(name string, extractor AttributeExtractor) {
 	}
 }
 
-// DeregisterAttributeExtractor removes an attribute extractor by name.
-// Returns true if an extractor was removed, false if no extractor was found with that name.
+// DeregisterAttributeExtractor removes an attribute extractor by name. Returns
+// true if an extractor was removed, false if no extractor was found with that
+// name.
 func DeregisterAttributeExtractor(name string) bool {
 	extractorsLock.Lock()
 	defer extractorsLock.Unlock()
