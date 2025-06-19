@@ -1,3 +1,5 @@
+//go:build go1.25
+
 package csrf
 
 import (
@@ -16,7 +18,11 @@ type Handler struct {
 	*http.CrossOriginProtection
 }
 
-func NewHandler(csrf *http.CrossOriginProtection) *Handler {
+func New() *Handler {
+	return &Handler{CrossOriginProtection: http.NewCrossOriginProtection()}
+}
+
+func NewWithProtection(csrf *http.CrossOriginProtection) *Handler {
 	return &Handler{CrossOriginProtection: csrf}
 }
 

@@ -76,8 +76,7 @@ func NewServer(c *Config) (*Server, error) {
 
 	csrfHandler := c.CSRFHandler
 	if csrfHandler == nil {
-		ch := http.NewCrossOriginProtection()
-		csrfHandler = csrf.NewHandler(ch).Handler
+		csrfHandler = csrf.New().Handler
 	}
 	webMiddleware = append(webMiddleware, csrfHandler)
 
