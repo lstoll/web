@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-type jsonErr struct {
-	Error string `json:"error"`
-}
-
 func SampleTemplateFunctions(smgr any) func(ctx context.Context) template.FuncMap {
 	// TODO - it would be nice to have a way to pass the session manager and
 	// other things in dynamically

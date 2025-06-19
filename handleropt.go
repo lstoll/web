@@ -7,6 +7,7 @@ import "net/http"
 // the request hits the middleware stack.
 type HandlerOpt func(r *http.Request) *http.Request
 
+// nolint:unused // TODO - either use or drop this.
 type handlerWithOpts struct {
 	http.Handler
 	Opts []HandlerOpt

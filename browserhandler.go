@@ -14,7 +14,7 @@ func (b BrowserHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rw = newResponseWriter(w, r, nil)
 	}
 	if err := r.ParseForm(); err != nil {
-		rw.WriteError(fmt.Errorf("parsing form: %w", err))
+		_ = rw.WriteError(fmt.Errorf("parsing form: %w", err))
 		return
 	}
 
@@ -25,7 +25,7 @@ func (b BrowserHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Call handler with response writer
 	err := b(r.Context(), rw, br)
 	if err != nil {
-		rw.WriteError(fmt.Errorf("parsing form: %w", err))
+		_ = rw.WriteError(fmt.Errorf("parsing form: %w", err))
 		return
 	}
 }

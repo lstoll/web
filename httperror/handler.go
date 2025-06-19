@@ -1,15 +1,12 @@
 package httperror
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/lstoll/web/internal"
 )
 
 // ErrorHandler defines the interface for handling errors
@@ -62,47 +59,6 @@ func DefaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-}
-
-var _ internal.UnwrappableResponseWriter = (*responseWriter)(nil)
-
-// responseWriter wraps an http.ResponseWriter to intercept error responses
-type responseWriter struct {
-	http.ResponseWriter
-	err           error
-	code          int
-	headerWritten bool
-	buffer        bytes.Buffer
-}
-
-func newResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{
-		ResponseWriter: w,
-		code:           http.StatusOK,
-	}
-}
-
-func (w *responseWriter) WriteHeader(code int) {
-	w.code = code
-
-	if code < 400 {
-		w.ResponseWriter.WriteHeader(code)
-	}
-}
-
-func (w *responseWriter) Write(p []byte) (int, error) {
-	if w.code >= 400 {
-		return w.buffer.Write(p)
-	}
-	return w.ResponseWriter.Write(p)
-}
-
-func (w *responseWriter) WriteError(err error) {
-	w.err = err
-}
-
-func (w *responseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
 }
 
 // Handler provides HTTP error handling middleware

@@ -6,9 +6,11 @@ import (
 	"testing"
 )
 
+type testCtxKey struct{}
+
 // testExtractor is a simple attribute extractor for testing
 func testExtractor(ctx context.Context) []slog.Attr {
-	if v, ok := ctx.Value("test_key").(string); ok {
+	if v, ok := ctx.Value(testCtxKey{}).(string); ok {
 		return []slog.Attr{slog.String("extracted_key", v)}
 	}
 	return nil
@@ -76,7 +78,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "with extracted attrs",
-			ctx:  context.WithValue(context.Background(), "test_key", "extracted_value"),
+			ctx:  context.WithValue(context.Background(), testCtxKey{}, "extracted_value"),
 			record: slog.Record{
 				Level:   slog.LevelInfo,
 				Message: "test message",
@@ -88,7 +90,7 @@ func TestHandler(t *testing.T) {
 		{
 			name: "with both context and extracted attrs",
 			ctx: WithAttrs(
-				context.WithValue(context.Background(), "test_key", "extracted_value"),
+				context.WithValue(context.Background(), testCtxKey{}, "extracted_value"),
 				slog.String("ctx_attr", "value"),
 			),
 			record: slog.Record{
@@ -163,7 +165,7 @@ func TestHandler(t *testing.T) {
 
 		// Verify it no longer adds attributes
 		records = records[:0]
-		ctx := context.WithValue(context.Background(), "test_key", "extracted_value")
+		ctx := context.WithValue(context.Background(), testCtxKey{}, "extracted_value")
 		if err := ctxHandler.Handle(ctx, slog.Record{
 			Level:   slog.LevelInfo,
 			Message: "test message",

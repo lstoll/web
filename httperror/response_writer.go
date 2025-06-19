@@ -1,8 +1,10 @@
 package httperror
 
 import (
-	"errors"
+	"bytes"
 	"net/http"
+
+	"github.com/lstoll/web/internal"
 )
 
 // ResponseWriter extends the standard http.ResponseWriter with a method to
@@ -12,28 +14,48 @@ type ResponseWriter interface {
 	WriteError(err error)
 }
 
-type errorResponseWriter struct {
+var (
+	_ internal.UnwrappableResponseWriter = (*responseWriter)(nil)
+	_ ResponseWriter                     = (*responseWriter)(nil)
+)
+
+// responseWriter wraps an http.ResponseWriter to intercept error responses
+type responseWriter struct {
 	http.ResponseWriter
-	baseReq *http.Request
-	handler ErrorHandler
+	err           error
+	code          int
+	headerWritten bool
+
+	buffer bytes.Buffer
 }
 
-func (e *errorResponseWriter) WriteError(r *http.Request, err error) {
-	e.handler.HandleError(e.ResponseWriter, r, err)
-}
-
-// WriteHeader implements the http.ResponseWriter interface, intercepting the error code
-// and passing it to the typed WriteError method.å
-func (e *errorResponseWriter) WriteHeader(status int) {
-	switch {
-	case status >= 400:
-		// TODO - how does this work with the test from http.Error?
-		e.WriteError(e.baseReq, &httpErr{
-			error: errors.New(http.StatusText(status)),
-			code:  status,
-		})
-	default:
-		// if it's not a case we explicitly handle, just pass it through.
-		e.ResponseWriter.WriteHeader(status)
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{
+		ResponseWriter: w,
+		code:           http.StatusOK,
 	}
+}
+
+func (w *responseWriter) WriteHeader(code int) {
+	w.code = code
+
+	if code < 400 && !w.headerWritten {
+		w.ResponseWriter.WriteHeader(code)
+		w.headerWritten = true
+	}
+}
+
+func (w *responseWriter) Write(p []byte) (int, error) {
+	if w.code >= 400 {
+		return w.buffer.Write(p)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *responseWriter) WriteError(err error) {
+	w.err = err
+}
+
+func (w *responseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }

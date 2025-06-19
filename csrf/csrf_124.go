@@ -8,8 +8,6 @@ import (
 	"filippo.io/csrf"
 )
 
-type skipContextKey struct{}
-
 // Skip marks the request to be skipped for CSRF protection.
 var Skip = csrf.UnsafeBypassRequest
 

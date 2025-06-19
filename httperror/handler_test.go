@@ -68,7 +68,7 @@ func TestHandler(t *testing.T) {
 			name: "success response",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("success"))
+				_, _ = w.Write([]byte("success"))
 			}),
 			wantCode: http.StatusOK,
 			wantBody: "success",
@@ -88,7 +88,7 @@ func TestHandler(t *testing.T) {
 			}),
 			errorHandler: ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 				w.WriteHeader(http.StatusTeapot)
-				w.Write([]byte("custom error handler"))
+				_, _ = w.Write([]byte("custom error handler"))
 			}),
 			wantCode: http.StatusTeapot,
 			wantBody: "custom error handler",
