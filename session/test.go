@@ -6,7 +6,7 @@ import (
 )
 
 type TestResult struct {
-	ctx *sessCtx
+	ctx *Session
 }
 
 func (t *TestResult) Saved() bool {
@@ -26,12 +26,16 @@ func (t *TestResult) Result() map[string]any {
 }
 
 // TestContext attaches a session to a context, to be used for testing. The
-// returned TestResult can be used to verify the actions against the session
-func TestContext(ctx context.Context, sess map[string]any) (context.Context, *TestResult) {
-	return context.WithValue(ctx, sessionContextKey{}, &sessCtx{
-		sessdata: persistedSession{
-			Data:      sess,
-			CreatedAt: time.Now(),
-		},
-	}), nil
+// returned TestResult can be used to verify the actions against the session. The session
+// is optional, if omitted a new session is created.
+func TestContext(ctx context.Context, s *Session) (context.Context, *TestResult) {
+	if s == nil {
+		s = &Session{
+			sessdata: persistedSession{
+				Data:      make(map[string]any),
+				CreatedAt: time.Now(),
+			},
+		}
+	}
+	return context.WithValue(ctx, sessionContextKey{}, s), nil
 }

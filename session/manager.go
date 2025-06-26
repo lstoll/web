@@ -14,8 +14,8 @@ import (
 
 // FromContext returns the Session from the given context. It panics if no
 // session exists in the context.
-func FromContext(ctx context.Context) (Session, bool) {
-	sessCtx, ok := ctx.Value(sessionContextKey{}).(*sessCtx)
+func FromContext(ctx context.Context) (*Session, bool) {
+	sessCtx, ok := ctx.Value(sessionContextKey{}).(*Session)
 	if !ok {
 		return nil, false
 	}
@@ -24,7 +24,7 @@ func FromContext(ctx context.Context) (Session, bool) {
 
 // MustFromContext returns the Session from the given context. It panics if no
 // session exists in the context.
-func MustFromContext(ctx context.Context) Session {
+func MustFromContext(ctx context.Context) *Session {
 	sess, ok := FromContext(ctx)
 	if !ok {
 		panic("no session in context")
@@ -172,12 +172,12 @@ var managerCookieValueEncoding = base64.RawURLEncoding
 // Wrap creates middleware that handles session management for each request
 func (m *Manager) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := r.Context().Value(sessionContextKey{}).(*sessCtx); ok {
+		if _, ok := r.Context().Value(sessionContextKey{}).(*Session); ok {
 			panic("session middleware wrapped more than once")
 		}
 
 		// Create new session context with initial metadata
-		sctx := &sessCtx{
+		sctx := &Session{
 			sessdata: persistedSession{
 				Data:      make(map[string]any),
 				CreatedAt: time.Now(),
@@ -249,7 +249,7 @@ func (m *Manager) loadSession(r *http.Request) ([]byte, error) {
 	}
 }
 
-func (m *Manager) saveHook(r *http.Request, sctx *sessCtx) func(w http.ResponseWriter) bool {
+func (m *Manager) saveHook(r *http.Request, sctx *Session) func(w http.ResponseWriter) bool {
 	return func(w http.ResponseWriter) bool {
 		// Update the metadata timestamp
 		sctx.sessdata.UpdatedAt = time.Now()
@@ -281,7 +281,7 @@ func (m *Manager) saveHook(r *http.Request, sctx *sessCtx) func(w http.ResponseW
 }
 
 // saveSession saves the session data to the appropriate storage
-func (m *Manager) saveSession(w http.ResponseWriter, r *http.Request, sctx *sessCtx) error {
+func (m *Manager) saveSession(w http.ResponseWriter, r *http.Request, sctx *Session) error {
 	// Encode session data
 	data, err := m.codec.Encode(sctx.sessdata)
 	if err != nil {
@@ -302,7 +302,7 @@ func (m *Manager) saveSession(w http.ResponseWriter, r *http.Request, sctx *sess
 }
 
 // deleteSession deletes the session from the appropriate storage
-func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *sessCtx) error {
+func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *Session) error {
 	// Delete cookie regardless of storage mode
 	dc := m.cookieSettings.newCookie(time.Time{})
 	dc.MaxAge = -1
@@ -335,7 +335,7 @@ func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *se
 }
 
 // touchSession updates the session expiry without modifying content
-func (m *Manager) touchSession(w http.ResponseWriter, r *http.Request, sctx *sessCtx) error {
+func (m *Manager) touchSession(w http.ResponseWriter, r *http.Request, sctx *Session) error {
 	// Calculate new expiry
 	expiresAt := m.calculateExpiry(sctx.sessdata)
 

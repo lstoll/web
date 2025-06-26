@@ -17,7 +17,7 @@ type KV interface {
 }
 
 // saveToKV saves session data to the KV store and puts the ID in a cookie
-func (m *Manager) saveToKV(w http.ResponseWriter, r *http.Request, sctx *sessCtx, expiresAt time.Time, data []byte) error {
+func (m *Manager) saveToKV(w http.ResponseWriter, r *http.Request, sctx *Session, expiresAt time.Time, data []byte) error {
 	// Generate or get session ID
 	sessionID := getManagerSessionIDFromContext(r, m)
 	if sessionID == "" || sctx.reset {

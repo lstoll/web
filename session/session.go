@@ -1,40 +1,16 @@
 package session
 
+import (
+	"maps"
+	"sync"
+)
+
 type sessionContextKey struct{}
 
-// Session represents a user session with data access methods.
-type Session interface {
-	// Get returns the value for the given key from the session.
-	// If the key doesn't exist, it returns nil.
-	Get(key string) any
-
-	// GetAll returns the entire session data map.
-	GetAll() map[string]any
-
-	// Set sets a single key-value pair in the session and marks it to be saved.
-	Set(key string, value any)
-
-	// SetAll sets the entire session data map and marks it to be saved.
-	SetAll(data map[string]any)
-
-	// Delete marks the session for deletion at the end of the request.
-	Delete()
-
-	// Reset rotates the session ID to avoid session fixation.
-	Reset()
-
-	// HasFlash indicates if there is a flash message.
-	HasFlash() bool
-
-	// FlashIsError indicates that the flash message is an error.
-	FlashIsError() bool
-
-	// FlashMessage returns the current flash message.
-	FlashMessage() string
-}
-
-type sessCtx struct {
-	sessdata persistedSession
+// Session represents a tracked web session.
+type Session struct {
+	sessdata   persistedSession
+	sessdataMu sync.RWMutex
 	// datab is the original loaded data bytes. Used for idle timeout, when a
 	// save may happen without data modification
 	datab  []byte
@@ -45,24 +21,36 @@ type sessCtx struct {
 
 // Get returns the value for the given key from the session.
 // If the key doesn't exist, it returns nil.
-func (s *sessCtx) Get(key string) any {
+func (s *Session) Get(key string) any {
+	s.sessdataMu.RLock()
+	defer s.sessdataMu.RUnlock()
+
 	return s.sessdata.Data[key]
 }
 
-// GetAll returns the entire session data map.
-func (s *sessCtx) GetAll() map[string]any {
-	return s.sessdata.Data
+// GetAll returns a copy of the session data map.
+func (s *Session) GetAll() map[string]any {
+	s.sessdataMu.RLock()
+	defer s.sessdataMu.RUnlock()
+
+	return maps.Clone(s.sessdata.Data)
 }
 
 // Set sets a single key-value pair in the session and marks it to be saved.
-func (s *sessCtx) Set(key string, value any) {
+func (s *Session) Set(key string, value any) {
+	s.sessdataMu.Lock()
+	defer s.sessdataMu.Unlock()
+
 	s.delete = false
 	s.save = true
 	s.sessdata.Data[key] = value
 }
 
 // SetAll sets the entire session data map and marks it to be saved.
-func (s *sessCtx) SetAll(data map[string]any) {
+func (s *Session) SetAll(data map[string]any) {
+	s.sessdataMu.Lock()
+	defer s.sessdataMu.Unlock()
+
 	s.delete = false
 	s.save = true
 
@@ -70,7 +58,10 @@ func (s *sessCtx) SetAll(data map[string]any) {
 }
 
 // Delete marks the session for deletion at the end of the request.
-func (s *sessCtx) Delete() {
+func (s *Session) Delete() {
+	s.sessdataMu.Lock()
+	defer s.sessdataMu.Unlock()
+
 	s.datab = nil
 	s.sessdata = persistedSession{
 		Data: make(map[string]any),
@@ -81,7 +72,10 @@ func (s *sessCtx) Delete() {
 }
 
 // Reset rotates the session ID to avoid session fixation.
-func (s *sessCtx) Reset() {
+func (s *Session) Reset() {
+	s.sessdataMu.Lock()
+	defer s.sessdataMu.Unlock()
+
 	s.datab = nil
 	s.save = false
 	s.delete = false
@@ -89,17 +83,17 @@ func (s *sessCtx) Reset() {
 }
 
 // HasFlash indicates if there is a flash message.
-func (s *sessCtx) HasFlash() bool {
+func (s *Session) HasFlash() bool {
 	return s.sessdata.Flash != flashLevelNone
 }
 
 // FlashIsError indicates that the flash message is an error.
-func (s *sessCtx) FlashIsError() bool {
+func (s *Session) FlashIsError() bool {
 	return s.sessdata.Flash == flashLevelError
 }
 
 // FlashMessage returns the current flash message and clears it.
-func (s *sessCtx) FlashMessage() string {
+func (s *Session) FlashMessage() string {
 	flash := s.sessdata.FlashMsg
 	if flash == "" {
 		return ""
@@ -110,4 +104,16 @@ func (s *sessCtx) FlashMessage() string {
 	s.save = true
 
 	return flash
+}
+
+func (s *Session) SetFlashError(message string) {
+	s.sessdata.FlashMsg = message
+	s.sessdata.Flash = flashLevelError
+	s.save = true
+}
+
+func (s *Session) SetFlashMessage(message string) {
+	s.sessdata.FlashMsg = message
+	s.sessdata.Flash = flashLevelInfo
+	s.save = true
 }

@@ -61,7 +61,7 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 
 	tests := []struct {
 		name    string
-		session map[string]any
+		session func(*session.Session) *session.Session
 		want    string
 	}{
 		{
@@ -76,9 +76,9 @@ ScriptNonceAttr: %s
 		},
 		{
 			name: "flash error",
-			session: map[string]any{
-				"__flash_is_error": true, // TODO - test shouldn't need to know internals
-				"__flash":          "an error occurred",
+			session: func(s *session.Session) *session.Session {
+				s.SetFlashError("an error occurred")
+				return s
 			},
 			want: `
 		HasFlash: true
@@ -92,17 +92,18 @@ ScriptNonceAttr: %s
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.session == nil {
-				tt.session = map[string]any{}
-			}
-
 			req := httptest.NewRequest("GET", "/test", nil)
 			// Add Sec-Fetch headers for our new protection
 			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			req.Header.Set("Sec-Fetch-Mode", "navigate")
 			req.Header.Set("Sec-Fetch-Dest", "document")
 
-			ctx, _ := session.TestContext(req.Context(), tt.session)
+			var s *session.Session
+			if tt.session != nil {
+				s = tt.session(&session.Session{})
+			}
+
+			ctx, _ := session.TestContext(req.Context(), s)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()

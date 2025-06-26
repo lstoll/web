@@ -66,7 +66,7 @@ func runE2ETest(t testing.TB, mgr *Manager, testReset bool) {
 		}
 
 		// Log raw session data from context for debugging
-		sessCtx := r.Context().Value(sessionContextKey{}).(*sessCtx)
+		sessCtx := r.Context().Value(sessionContextKey{}).(*Session)
 		t.Logf("Session data in context: %+v", sessCtx.sessdata.Data)
 
 		sess := MustFromContext(r.Context())
