@@ -7,18 +7,12 @@ import (
 	"time"
 )
 
-// Session metadata keys for persisting in the map
-const (
-	metadataCreatedAt = "__createdAt"
-	metadataUpdatedAt = "__updatedAt"
-)
-
 type codec interface {
 	// Encode serializes the session data map
-	Encode(data map[string]any) ([]byte, error)
+	Encode(sd persistedSession) ([]byte, error)
 
 	// Decode deserializes the session data into a map
-	Decode(data []byte) (map[string]any, error)
+	Decode(data []byte) (persistedSession, error)
 }
 
 // gobCodec is a codec that uses Go's gob encoding
@@ -27,54 +21,47 @@ type gobCodec struct{}
 var _ codec = (*gobCodec)(nil)
 
 func init() {
-	// Register common types with gob
-	gob.Register(time.Time{})
-	gob.Register(map[string]any{})
-	gob.Register([]interface{}{})
-	gob.Register(map[string]interface{}{})
-	gob.Register("")    // Register string type
-	gob.Register(0)     // Register int type
-	gob.Register(false) // Register bool type
+	// register with a fixed name, so renames/refactors don't break existing
+	// data.
+	gob.RegisterName("github.com/lstoll/web/session.persistedSession", persistedSession{})
 }
 
-func (g *gobCodec) Encode(data map[string]any) ([]byte, error) {
+type flashLevel string
+
+const (
+	flashLevelNone  flashLevel = ""
+	flashLevelInfo  flashLevel = "info"
+	flashLevelError flashLevel = "error"
+)
+
+// persistedSession is the type that codecs are passed to serialize. Changes to
+// this must be forward/backwards compatible. If we ever expose codec, we should
+// think about stability beyond gob.
+type persistedSession struct {
+	Data      map[string]any
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Flash     flashLevel
+	FlashMsg  string
+}
+
+func (g *gobCodec) Encode(sess persistedSession) ([]byte, error) {
 	var buf bytes.Buffer
 
-	if err := gob.NewEncoder(&buf).Encode(data); err != nil {
+	if err := gob.NewEncoder(&buf).Encode(sess); err != nil {
 		return nil, fmt.Errorf("encoding session data: %w", err)
 	}
 
 	return buf.Bytes(), nil
 }
 
-func (g *gobCodec) Decode(data []byte) (map[string]any, error) {
-	var result map[string]any
+func (g *gobCodec) Decode(data []byte) (persistedSession, error) {
+	var result persistedSession
 
 	err := gob.NewDecoder(bytes.NewReader(data)).Decode(&result)
 	if err != nil {
-		return nil, fmt.Errorf("decoding session data: %w", err)
+		return persistedSession{}, fmt.Errorf("decoding session data: %w", err)
 	}
 
 	return result, nil
-}
-
-// extractMetadata gets the metadata from the session map
-func extractMetadata(data map[string]any) *sessionMetadata {
-	var md sessionMetadata
-
-	if createdAt, ok := data[metadataCreatedAt].(time.Time); ok {
-		md.CreatedAt = createdAt
-	}
-
-	if updatedAt, ok := data[metadataUpdatedAt].(time.Time); ok {
-		md.UpdatedAt = updatedAt
-	}
-
-	return &md
-}
-
-// setMetadata stores the metadata in the session map
-func setMetadata(data map[string]any, md *sessionMetadata) {
-	data[metadataCreatedAt] = md.CreatedAt
-	data[metadataUpdatedAt] = md.UpdatedAt
 }

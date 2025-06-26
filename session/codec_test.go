@@ -11,13 +11,11 @@ func TestGobEncoding(t *testing.T) {
 		"test1": "value1",
 	}
 
-	// Add session metadata
-	md := &sessionMetadata{}
-	setMetadata(data, md)
-
 	// Encode the data
 	g := &gobCodec{}
-	encodedData, err := g.Encode(data)
+	encodedData, err := g.Encode(persistedSession{
+		Data: data,
+	})
 	if err != nil {
 		t.Fatalf("Failed to encode: %v", err)
 	}
@@ -29,7 +27,7 @@ func TestGobEncoding(t *testing.T) {
 	}
 
 	// Check if values match
-	if decodedData["test0"] != "value0" || decodedData["test1"] != "value1" {
-		t.Fatalf("Data mismatch: %v", decodedData)
+	if decodedData.Data["test0"] != "value0" || decodedData.Data["test1"] != "value1" {
+		t.Fatalf("Data mismatch: %v", decodedData.Data)
 	}
 }

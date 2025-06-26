@@ -34,9 +34,7 @@ type Session interface {
 }
 
 type sessCtx struct {
-	metadata *sessionMetadata
-	// data is the actual session data
-	data map[string]any
+	sessdata persistedSession
 	// datab is the original loaded data bytes. Used for idle timeout, when a
 	// save may happen without data modification
 	datab  []byte
@@ -48,19 +46,19 @@ type sessCtx struct {
 // Get returns the value for the given key from the session.
 // If the key doesn't exist, it returns nil.
 func (s *sessCtx) Get(key string) any {
-	return s.data[key]
+	return s.sessdata.Data[key]
 }
 
 // GetAll returns the entire session data map.
 func (s *sessCtx) GetAll() map[string]any {
-	return s.data
+	return s.sessdata.Data
 }
 
 // Set sets a single key-value pair in the session and marks it to be saved.
 func (s *sessCtx) Set(key string, value any) {
 	s.delete = false
 	s.save = true
-	s.data[key] = value
+	s.sessdata.Data[key] = value
 }
 
 // SetAll sets the entire session data map and marks it to be saved.
@@ -68,18 +66,15 @@ func (s *sessCtx) SetAll(data map[string]any) {
 	s.delete = false
 	s.save = true
 
-	// Keep the existing metadata
-	md := s.metadata
-	s.data = data
-
-	// Make sure metadata stays in the map
-	setMetadata(s.data, md)
+	s.sessdata.Data = data
 }
 
 // Delete marks the session for deletion at the end of the request.
 func (s *sessCtx) Delete() {
 	s.datab = nil
-	s.data = make(map[string]any)
+	s.sessdata = persistedSession{
+		Data: make(map[string]any),
+	}
 	s.delete = true
 	s.save = false
 	s.reset = false
@@ -95,38 +90,24 @@ func (s *sessCtx) Reset() {
 
 // HasFlash indicates if there is a flash message.
 func (s *sessCtx) HasFlash() bool {
-	_, hasFlash := s.data["__flash"]
-	return hasFlash
+	return s.sessdata.Flash != flashLevelNone
 }
 
 // FlashIsError indicates that the flash message is an error.
 func (s *sessCtx) FlashIsError() bool {
-	isErr, ok := s.data["__flash_is_error"]
-	if !ok {
-		return false
-	}
-	boolVal, ok := isErr.(bool)
-	if !ok {
-		return false
-	}
-	return boolVal
+	return s.sessdata.Flash == flashLevelError
 }
 
 // FlashMessage returns the current flash message and clears it.
 func (s *sessCtx) FlashMessage() string {
-	flash, ok := s.data["__flash"]
-	if !ok {
+	flash := s.sessdata.FlashMsg
+	if flash == "" {
 		return ""
 	}
 
-	// Clear the flash
-	delete(s.data, "__flash")
-	delete(s.data, "__flash_is_error")
+	// Clear the flash, it's been read
+	s.sessdata.FlashMsg = ""
 	s.save = true
 
-	str, ok := flash.(string)
-	if !ok {
-		return ""
-	}
-	return str
+	return flash
 }

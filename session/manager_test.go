@@ -10,53 +10,53 @@ func TestItem_InvalidAt(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		item        *sessionMetadata
+		item        persistedSession
 		maxLifetime *time.Duration
 		idleTimeout *time.Duration
 		want        time.Time
 	}{
 		{
 			name:        "Max lifetime only",
-			item:        &sessionMetadata{CreatedAt: now},
+			item:        persistedSession{CreatedAt: now},
 			maxLifetime: ptr(2 * time.Hour),
 			want:        now.Add(2 * time.Hour),
 		},
 		{
 			name:        "Idle timeout only (CreatedAt)",
-			item:        &sessionMetadata{CreatedAt: now},
+			item:        persistedSession{CreatedAt: now},
 			idleTimeout: ptr(1 * time.Hour),
 			want:        now.Add(1 * time.Hour),
 		},
 		{
 			name:        "Idle timeout only (UpdatedAt)",
-			item:        &sessionMetadata{CreatedAt: now, UpdatedAt: now.Add(30 * time.Minute)},
+			item:        persistedSession{CreatedAt: now, UpdatedAt: now.Add(30 * time.Minute)},
 			idleTimeout: ptr(1 * time.Hour),
 			want:        now.Add(30 * time.Minute).Add(1 * time.Hour),
 		},
 		{
 			name:        "Both timeouts, MaxLifetime earlier",
-			item:        &sessionMetadata{CreatedAt: now, UpdatedAt: now.Add(30 * time.Minute)},
+			item:        persistedSession{CreatedAt: now, UpdatedAt: now.Add(30 * time.Minute)},
 			maxLifetime: ptr(1 * time.Hour),
 			idleTimeout: ptr(2 * time.Hour),
 			want:        now.Add(1 * time.Hour),
 		},
 		{
 			name:        "Both timeouts, IdleTimeout earlier (CreatedAt)",
-			item:        &sessionMetadata{CreatedAt: now},
+			item:        persistedSession{CreatedAt: now},
 			maxLifetime: ptr(2 * time.Hour),
 			idleTimeout: ptr(1 * time.Hour),
 			want:        now.Add(1 * time.Hour),
 		},
 		{
 			name:        "Both timeouts, IdleTimeout earlier (UpdatedAt)",
-			item:        &sessionMetadata{CreatedAt: now, UpdatedAt: now.Add(1 * time.Hour)},
+			item:        persistedSession{CreatedAt: now, UpdatedAt: now.Add(1 * time.Hour)},
 			maxLifetime: ptr(2 * time.Hour),
 			idleTimeout: ptr(1 * time.Hour),
 			want:        now.Add(1 * time.Hour).Add(1 * time.Hour), // 2 hours from original CreatedAt
 		},
 		{
 			name:        "UpdatedAt is nil, Idle Timeout",
-			item:        &sessionMetadata{CreatedAt: now},
+			item:        persistedSession{CreatedAt: now},
 			idleTimeout: ptr(1 * time.Hour),
 			want:        now.Add(1 * time.Hour),
 		},

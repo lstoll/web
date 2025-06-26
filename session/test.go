@@ -22,16 +22,16 @@ func (t *TestResult) Reset() bool {
 }
 
 func (t *TestResult) Result() map[string]any {
-	return t.ctx.data
+	return t.ctx.sessdata.Data
 }
 
 // TestContext attaches a session to a context, to be used for testing. The
 // returned TestResult can be used to verify the actions against the session
 func TestContext(ctx context.Context, sess map[string]any) (context.Context, *TestResult) {
 	return context.WithValue(ctx, sessionContextKey{}, &sessCtx{
-		metadata: &sessionMetadata{
+		sessdata: persistedSession{
+			Data:      sess,
 			CreatedAt: time.Now(),
 		},
-		data: sess,
 	}), nil
 }

@@ -32,13 +32,6 @@ func MustFromContext(ctx context.Context) Session {
 	return sess
 }
 
-// sessionMetadata tracks additional information for the session manager to use,
-// alongside the session data itself.
-type sessionMetadata struct {
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
 // storageMode identifies the session storage mechanism
 type storageMode int
 
@@ -184,17 +177,12 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 		}
 
 		// Create new session context with initial metadata
-		md := &sessionMetadata{
-			CreatedAt: time.Now(),
-		}
-
 		sctx := &sessCtx{
-			metadata: md,
-			data:     make(map[string]any),
+			sessdata: persistedSession{
+				Data:      make(map[string]any),
+				CreatedAt: time.Now(),
+			},
 		}
-
-		// Store metadata in the map
-		setMetadata(sctx.data, md)
 
 		// Load session data if it exists
 		data, err := m.loadSession(r)
@@ -208,8 +196,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 				// Log the error but don't fail the request - just start a new session
 				slog.WarnContext(r.Context(), "Failed to decode session data, starting a new session", "err", err)
 			} else {
-				sctx.data = decodedData
-				sctx.metadata = extractMetadata(decodedData)
+				sctx.sessdata = decodedData
 
 				// track the original data for idle timeout handling
 				if m.opts.IdleTimeout != 0 {
@@ -217,9 +204,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 				}
 
 				if m.opts.Onload != nil {
-					sctx.data = m.opts.Onload(sctx.data)
-					// Update metadata in the map after potential modification
-					setMetadata(sctx.data, sctx.metadata)
+					sctx.sessdata.Data = m.opts.Onload(sctx.sessdata.Data)
 				}
 			}
 		}
@@ -267,8 +252,7 @@ func (m *Manager) loadSession(r *http.Request) ([]byte, error) {
 func (m *Manager) saveHook(r *http.Request, sctx *sessCtx) func(w http.ResponseWriter) bool {
 	return func(w http.ResponseWriter) bool {
 		// Update the metadata timestamp
-		sctx.metadata.UpdatedAt = time.Now()
-		setMetadata(sctx.data, sctx.metadata)
+		sctx.sessdata.UpdatedAt = time.Now()
 
 		// If we need to delete the session
 		if sctx.delete || sctx.reset {
@@ -299,13 +283,13 @@ func (m *Manager) saveHook(r *http.Request, sctx *sessCtx) func(w http.ResponseW
 // saveSession saves the session data to the appropriate storage
 func (m *Manager) saveSession(w http.ResponseWriter, r *http.Request, sctx *sessCtx) error {
 	// Encode session data
-	data, err := m.codec.Encode(sctx.data)
+	data, err := m.codec.Encode(sctx.sessdata)
 	if err != nil {
 		return fmt.Errorf("encoding session data: %w", err)
 	}
 
 	// Calculate expiry
-	expiresAt := m.calculateExpiry(sctx.metadata)
+	expiresAt := m.calculateExpiry(sctx.sessdata)
 
 	switch m.storageMode {
 	case storageModeCookie:
@@ -353,7 +337,7 @@ func (m *Manager) deleteSession(w http.ResponseWriter, r *http.Request, sctx *se
 // touchSession updates the session expiry without modifying content
 func (m *Manager) touchSession(w http.ResponseWriter, r *http.Request, sctx *sessCtx) error {
 	// Calculate new expiry
-	expiresAt := m.calculateExpiry(sctx.metadata)
+	expiresAt := m.calculateExpiry(sctx.sessdata)
 
 	switch m.storageMode {
 	case storageModeCookie:
@@ -389,20 +373,20 @@ func (m *Manager) touchSession(w http.ResponseWriter, r *http.Request, sctx *ses
 	}
 }
 
-func (m *Manager) calculateExpiry(md *sessionMetadata) time.Time {
+func (m *Manager) calculateExpiry(sessdata persistedSession) time.Time {
 	var invalidTimes []time.Time
 
 	if m.opts.MaxLifetime != 0 {
-		maxInvalidAt := md.CreatedAt.Add(m.opts.MaxLifetime)
+		maxInvalidAt := sessdata.CreatedAt.Add(m.opts.MaxLifetime)
 		invalidTimes = append(invalidTimes, maxInvalidAt)
 	}
 
 	if m.opts.IdleTimeout != 0 {
 		var idleInvalidAt time.Time
-		if !md.UpdatedAt.IsZero() {
-			idleInvalidAt = md.UpdatedAt.Add(m.opts.IdleTimeout)
+		if !sessdata.UpdatedAt.IsZero() {
+			idleInvalidAt = sessdata.UpdatedAt.Add(m.opts.IdleTimeout)
 		} else {
-			idleInvalidAt = md.CreatedAt.Add(m.opts.IdleTimeout)
+			idleInvalidAt = sessdata.CreatedAt.Add(m.opts.IdleTimeout)
 		}
 		invalidTimes = append(invalidTimes, idleInvalidAt)
 	}
