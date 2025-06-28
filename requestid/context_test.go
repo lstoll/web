@@ -3,6 +3,8 @@ package requestid
 import (
 	"context"
 	"testing"
+
+	"github.com/lstoll/web/internal"
 )
 
 func TestContext(t *testing.T) {
@@ -12,7 +14,8 @@ func TestContext(t *testing.T) {
 		t.Error("new context should not contain a request ID")
 	}
 
-	ctx, id := ContextWithNewRequestID(ctx)
+	id := internal.NewUUIDV4().String()
+	ctx = ContextWithRequestID(ctx, id)
 
 	gotID, ok := FromContext(ctx)
 	if !ok {
@@ -22,7 +25,7 @@ func TestContext(t *testing.T) {
 		t.Errorf("wanted request ID %s, got: %s", id, gotID)
 	}
 
-	newID := newRequestID()
+	newID := internal.NewUUIDV4().String()
 	ctx = ContextWithRequestID(ctx, newID)
 
 	gotID, ok = FromContext(ctx)

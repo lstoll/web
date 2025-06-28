@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/lstoll/web/internal"
 )
 
 func TestHTTP(t *testing.T) {
-	svr := httptest.NewServer(Handler(true, http.HandlerFunc(echoRid)))
+	svr := httptest.NewServer((&Middleware{TrustedHeaders: []string{RequestIDHeader}}).Handler(http.HandlerFunc(echoRid)))
 	t.Cleanup(svr.Close)
 
 	client := &http.Client{}
@@ -27,7 +29,8 @@ func TestHTTP(t *testing.T) {
 		t.Error("wanted id, but got none")
 	}
 
-	ctx, id := ContextWithNewRequestID(context.Background())
+	id := internal.NewUUIDV4().String()
+	ctx := ContextWithRequestID(context.Background(), id)
 
 	req, err = http.NewRequestWithContext(ctx, http.MethodGet, svr.URL, nil)
 	if err != nil {
@@ -44,13 +47,17 @@ func TestHTTP(t *testing.T) {
 }
 
 func TestUntrustedHTTP(t *testing.T) {
-	svr := httptest.NewServer(Handler(false, http.HandlerFunc(echoRid)))
+	svr := httptest.NewServer((&Middleware{}).Handler(http.HandlerFunc(echoRid)))
 	t.Cleanup(svr.Close)
 
 	client := &http.Client{}
 	HTTPClientWithRequestID(client)
 
-	ctx, id := ContextWithNewRequestID(context.Background())
+	ctx := ContextWithRequestID(context.Background(), internal.NewUUIDV4().String())
+	id, ok := FromContext(ctx)
+	if !ok {
+		t.Error("wanted id, but got none")
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, svr.URL, nil)
 	if err != nil {
