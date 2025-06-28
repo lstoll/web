@@ -99,8 +99,7 @@ func NewServer(c *Config) (*Server, error) {
 	}
 
 	svr.BaseMiddleware.Append(MiddlewareRequestIDName, func(h http.Handler) http.Handler {
-		// TODO - make requestID be a normal middleware
-		return requestid.Handler(true, h)
+		return (&requestid.Middleware{}).Handler(h)
 	})
 	svr.BaseMiddleware.Append(MiddlewareRequestLogName, loghandler.Handler)
 	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{}).Handle)
