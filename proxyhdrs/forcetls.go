@@ -4,7 +4,19 @@ import "net/http"
 
 type ForceTLS struct {
 	ForwardedProtoHeader string
-	HTTPMux              *http.ServeMux
+
+	bypassMux *http.ServeMux
+}
+
+// AllowBypass registers a http.ServeMux pattern that will not have TLS
+// enforced.
+func (h *ForceTLS) AllowBypass(pattern string) {
+	if h.bypassMux == nil {
+		h.bypassMux = http.NewServeMux()
+	}
+	h.bypassMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		// This handler is never actually called, we just use it for pattern matching
+	})
 }
 
 func (h *ForceTLS) Handle(next http.Handler) http.Handler {
@@ -24,10 +36,10 @@ func (h *ForceTLS) Handle(next http.Handler) http.Handler {
 		}
 
 		// do a check if we have a plain-text handler, use it if so.
-		if h.HTTPMux != nil {
-			h, p := h.HTTPMux.Handler(r)
+		if h.bypassMux != nil {
+			_, p := h.bypassMux.Handler(r)
 			if p != "" {
-				h.ServeHTTP(w, r)
+				next.ServeHTTP(w, r)
 				return
 			}
 		}

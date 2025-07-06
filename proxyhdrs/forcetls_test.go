@@ -14,7 +14,7 @@ func TestForceTLS_Handle(t *testing.T) {
 		tls                  bool
 		forwardedProtoHeader string
 		forwardedProtoValue  string
-		httpMux              *http.ServeMux
+		bypassPatterns       []string
 		expectedStatusCode   int
 		expectedLocation     string
 		expectedResponseBody string
@@ -54,15 +54,23 @@ func TestForceTLS_Handle(t *testing.T) {
 			expectedLocation:     "https://example.com/test",
 		},
 		{
-			name:                 "HTTP request with HTTP mux handler should use mux",
+			name:                 "HTTP request with bypass pattern should pass through",
 			requestURL:           "http://example.com/plain",
 			tls:                  false,
-			httpMux:              createTestMux(),
+			bypassPatterns:       []string{"/plain"},
 			expectedStatusCode:   http.StatusOK,
-			expectedResponseBody: "plain handler",
+			expectedResponseBody: "success",
 		},
 		{
-			name:               "HTTP request without mux handler should redirect",
+			name:                 "HTTP request with bypass pattern should pass through (multiple patterns)",
+			requestURL:           "http://example.com/api/health",
+			tls:                  false,
+			bypassPatterns:       []string{"/plain", "/api/health"},
+			expectedStatusCode:   http.StatusOK,
+			expectedResponseBody: "success",
+		},
+		{
+			name:               "HTTP request without bypass pattern should redirect",
 			requestURL:         "http://example.com/test",
 			tls:                false,
 			expectedStatusCode: http.StatusPermanentRedirect,
@@ -91,6 +99,32 @@ func TestForceTLS_Handle(t *testing.T) {
 			expectedStatusCode: http.StatusPermanentRedirect,
 			expectedLocation:   "https://example.com:8080/test",
 		},
+		{
+			name:               "HTTP request with bypass pattern but different path should redirect",
+			requestURL:         "http://example.com/other",
+			tls:                false,
+			bypassPatterns:     []string{"/plain"},
+			expectedStatusCode: http.StatusPermanentRedirect,
+			expectedLocation:   "https://example.com/other",
+		},
+		{
+			name:                 "HTTP request with multiple bypass patterns should pass through for matching pattern",
+			requestURL:           "http://example.com/metrics",
+			tls:                  false,
+			bypassPatterns:       []string{"/plain", "/api/health", "/metrics"},
+			expectedStatusCode:   http.StatusOK,
+			expectedResponseBody: "success",
+		},
+		{
+			name:                 "HTTP request with bypass pattern should work with forwarded proto header set",
+			requestURL:           "http://example.com/health",
+			tls:                  false,
+			forwardedProtoHeader: "X-Forwarded-Proto",
+			forwardedProtoValue:  "http",
+			bypassPatterns:       []string{"/health"},
+			expectedStatusCode:   http.StatusOK,
+			expectedResponseBody: "success",
+		},
 	}
 
 	for _, tt := range tests {
@@ -98,7 +132,11 @@ func TestForceTLS_Handle(t *testing.T) {
 			// Create the ForceTLS handler
 			forceTLS := &ForceTLS{
 				ForwardedProtoHeader: tt.forwardedProtoHeader,
-				HTTPMux:              tt.httpMux,
+			}
+
+			// Register bypass patterns
+			for _, pattern := range tt.bypassPatterns {
+				forceTLS.AllowBypass(pattern)
 			}
 
 			// Create a test handler that will be wrapped
@@ -151,14 +189,4 @@ func TestForceTLS_Handle(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Helper function to create a test HTTP mux
-func createTestMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/plain", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("plain handler"))
-	})
-	return mux
 }
