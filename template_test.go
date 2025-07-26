@@ -27,10 +27,8 @@ func TestTemplateFuncs(t *testing.T) {
 
 	ctx, _ := session.TestContext(t.Context(), nil)
 	ctx = contextWithStaticHandler(ctx, sh)
-	r := httptest.NewRequest("GET", "/test", nil)
-	r = r.WithContext(ctx)
 
-	tmpl, err := template.New("test").Funcs(TemplateFuncs(r, nil)).Parse(`{{define "test"}}
+	tmpl, err := template.New("test").Funcs(TemplateFuncs(ctx, nil)).Parse(`{{define "test"}}
 HasFlash: {{HasFlash}}
 FlashIsError: {{FlashIsError}}
 FlashMessage: {{FlashMessage}}
