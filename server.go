@@ -102,7 +102,10 @@ func NewServer(c *Config) (*Server, error) {
 		return (&requestid.Middleware{}).Handler(h)
 	})
 	svr.BaseMiddleware.Append(MiddlewareRequestLogName, loghandler.Handler)
-	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{}).Handle)
+	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{
+		RecoverPanic: true,
+		ErrorHandler: httperror.ErrorHandlerFunc(c.ErrorHandler), // TODO - default handler should be a handler?
+	}).Handle)
 
 	svr.BrowserMiddleware.Append(MiddlewareStaticName, func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strings"
 )
 
@@ -81,12 +82,20 @@ func (h *Handler) Handle(next http.Handler) http.Handler {
 			if h.RecoverPanic {
 				if p := recover(); p != nil {
 					var err error
+					stack := debug.Stack()
+
 					switch v := p.(type) {
 					case error:
-						err = fmt.Errorf("panic recovered: %w", v)
+						err = fmt.Errorf("panic recovered: %v", v)
 					default:
 						err = fmt.Errorf("panic recovered: %v", v)
 					}
+
+					// Log the panic with stack trace
+					slog.ErrorContext(r.Context(), "panic recovered in web handler",
+						"panic", p,
+						"path", r.URL.Path,
+						"stack", string(stack))
 
 					if h.ErrorHandler != nil {
 						h.ErrorHandler.HandleError(w, r, err)
