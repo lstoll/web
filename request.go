@@ -70,9 +70,6 @@ func (b *Request) DecodeForm(target any) error {
 }
 
 // RawRequest returns the raw http.Request underlying this request.
-//
-// Deprecated: This should only be used in exceptional circumstances. Prefer
-// extending the BrowserRequest, or document why it is needed.
 func (b *Request) RawRequest() *http.Request {
 	return b.r
 }
