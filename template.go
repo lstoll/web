@@ -8,12 +8,13 @@ import (
 	"maps"
 
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/internal/ctxkeys"
 	"github.com/lstoll/web/session"
 )
 
 func TemplateFuncs(ctx context.Context, addlFuncs template.FuncMap) template.FuncMap {
 	sess, sessOk := session.FromContext(ctx)
-	sh, shOk := staticHandlerFromContext(ctx)
+	sh, shOk := ctxkeys.StaticHandlerFromContext(ctx)
 
 	fm := map[string]any{
 		// CSP

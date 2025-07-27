@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/lstoll/web/internal/ctxkeys"
 	"github.com/lstoll/web/session"
 	"github.com/lstoll/web/static"
 )
@@ -26,7 +27,7 @@ func TestTemplateFuncs(t *testing.T) {
 	}
 
 	ctx, _ := session.TestContext(t.Context(), nil)
-	ctx = contextWithStaticHandler(ctx, sh)
+	ctx = ctxkeys.ContextWithStaticHandler(ctx, sh)
 
 	tmpl, err := template.New("test").Funcs(TemplateFuncs(ctx, nil)).Parse(`{{define "test"}}
 HasFlash: {{HasFlash}}

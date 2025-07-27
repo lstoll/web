@@ -10,8 +10,8 @@ import (
 	"github.com/lstoll/web/internal"
 )
 
-// newResponseWriter creates a new ResponseWriter
-func newResponseWriter(w http.ResponseWriter) ResponseWriter {
+// NewResponseWriter creates a new ResponseWriter
+func NewResponseWriter(w http.ResponseWriter) ResponseWriter {
 	return &responseWriter{
 		ResponseWriter: w,
 	}

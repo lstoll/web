@@ -10,6 +10,7 @@ import (
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/csrf"
 	"github.com/lstoll/web/httperror"
+	"github.com/lstoll/web/internal/ctxkeys"
 	"github.com/lstoll/web/middleware"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/requestlog"
@@ -111,7 +112,7 @@ func NewServer(c *Config) (*Server, error) {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// set the static handler in the context, so we can use it to build paths in
 			// templates.
-			r = r.WithContext(contextWithStaticHandler(r.Context(), sh))
+			r = r.WithContext(ctxkeys.ContextWithStaticHandler(r.Context(), sh))
 			h.ServeHTTP(w, r)
 		})
 	})
@@ -149,7 +150,7 @@ func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
 		for _, opt := range opts {
 			r = opt(r)
 		}
-		h.ServeHTTP(newResponseWriter(w), r)
+		h.ServeHTTP(NewResponseWriter(w), r)
 	}))
 }
 
