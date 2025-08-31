@@ -1,44 +1,63 @@
 package web
 
 import (
+	"context"
+	"fmt"
 	"html/template"
-	"net/http"
 
 	"maps"
 
 	"github.com/lstoll/web/csp"
+	"github.com/lstoll/web/internal/ctxkeys"
 	"github.com/lstoll/web/session"
 )
 
-func TemplateFuncs(r *http.Request, addlFuncs template.FuncMap) template.FuncMap {
-	sess, sessOk := session.FromContext(r.Context())
-	sh, shOk := staticHandlerFromContext(r.Context())
+func TemplateFuncs(ctx context.Context, addlFuncs template.FuncMap) template.FuncMap {
+	sess, sessOk := session.FromContext(ctx)
+	sh, shOk := ctxkeys.StaticHandlerFromContext(ctx)
 
 	fm := map[string]any{
+		// CSP
 		"ScriptNonceAttr": func() template.HTMLAttr {
-			nonce, ok := csp.GetScriptNonce(r.Context())
+			nonce, ok := csp.GetScriptNonce(ctx)
 			if !ok {
 				return ""
 			}
 			return template.HTMLAttr(`nonce="` + nonce + `"`)
 		},
 		"StyleNonceAttr": func() template.HTMLAttr {
-			nonce, ok := csp.GetStyleNonce(r.Context())
+			nonce, ok := csp.GetStyleNonce(ctx)
 			if !ok {
 				return ""
 			}
 			return template.HTMLAttr(`nonce="` + nonce + `"`)
 		},
-	}
-
-	if sessOk {
-		fm["HasFlash"] = sess.HasFlash
-		fm["FlashIsError"] = sess.FlashIsError
-		fm["FlashMessage"] = sess.FlashMessage
-	}
-
-	if shOk {
-		fm["StaticPath"] = sh.PathFor
+		// Session
+		"HasFlash": func() (bool, error) {
+			if !sessOk {
+				return false, fmt.Errorf("session not found")
+			}
+			return sess.HasFlash(), nil
+		},
+		"FlashIsError": func() (bool, error) {
+			if !sessOk {
+				return false, fmt.Errorf("session not found")
+			}
+			return sess.FlashIsError(), nil
+		},
+		"FlashMessage": func() (string, error) {
+			if !sessOk {
+				return "", fmt.Errorf("session not found")
+			}
+			return sess.FlashMessage(), nil
+		},
+		// Static
+		"StaticPath": func(file string) (string, error) {
+			if !shOk {
+				return "", fmt.Errorf("static handler not found")
+			}
+			return sh.PathFor(file)
+		},
 	}
 
 	maps.Copy(fm, addlFuncs)

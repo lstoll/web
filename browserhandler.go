@@ -14,7 +14,7 @@ type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error
 func (b BrowserHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rw, ok := w.(ResponseWriter)
 	if !ok {
-		rw = newResponseWriter(w)
+		rw = NewResponseWriter(w)
 	}
 	if err := r.ParseForm(); err != nil {
 		b.handleError(rw, r, fmt.Errorf("parsing form: %w", err))

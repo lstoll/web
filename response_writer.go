@@ -10,8 +10,8 @@ import (
 	"github.com/lstoll/web/internal"
 )
 
-// newResponseWriter creates a new ResponseWriter
-func newResponseWriter(w http.ResponseWriter) ResponseWriter {
+// NewResponseWriter creates a new ResponseWriter
+func NewResponseWriter(w http.ResponseWriter) ResponseWriter {
 	return &responseWriter{
 		ResponseWriter: w,
 	}
@@ -64,7 +64,7 @@ func (w *responseWriter) Unwrap() http.ResponseWriter {
 }
 
 func (w *responseWriter) writeTemplateResponse(req *Request, resp *TemplateResponse) error {
-	t := resp.Templates.Funcs(TemplateFuncs(req.r, resp.Funcs))
+	t := resp.Templates.Funcs(TemplateFuncs(req.r.Context(), resp.Funcs))
 
 	// Buffer the render to capture errors before writing
 	var buf bytes.Buffer

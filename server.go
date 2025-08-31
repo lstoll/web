@@ -10,6 +10,7 @@ import (
 	"github.com/lstoll/web/csp"
 	"github.com/lstoll/web/csrf"
 	"github.com/lstoll/web/httperror"
+	"github.com/lstoll/web/internal/ctxkeys"
 	"github.com/lstoll/web/middleware"
 	"github.com/lstoll/web/requestid"
 	"github.com/lstoll/web/requestlog"
@@ -20,13 +21,14 @@ import (
 const staticPrefix = "/static/"
 
 const (
-	MiddlewareCSPName        = "csp"
-	MiddlewareCSRFName       = "csrf"
-	MiddlewareRequestIDName  = "requestid"
-	MiddlewareRequestLogName = "requestlog"
-	MiddlewareSessionName    = "session"
-	MiddlewareErrorName      = "error"
-	MiddlewareStaticName     = "static"
+	MiddlewareCSPName         = "csp"
+	MiddlewareCSRFName        = "csrf"
+	MiddlewareRequestIDName   = "requestid"
+	MiddlewareRequestLogName  = "requestlog"
+	MiddlewareSessionName     = "session"
+	MiddlewareErrorName       = "error"
+	MiddlewareStaticName      = "static"
+	MiddlewareBaseHeadersName = "baseheaders"
 )
 
 var DefaultCSPOpts = []csp.HandlerOpt{
@@ -101,14 +103,18 @@ func NewServer(c *Config) (*Server, error) {
 	svr.BaseMiddleware.Append(MiddlewareRequestIDName, func(h http.Handler) http.Handler {
 		return (&requestid.Middleware{}).Handler(h)
 	})
+	svr.BaseMiddleware.Append(MiddlewareBaseHeadersName, BaseHeaders)
 	svr.BaseMiddleware.Append(MiddlewareRequestLogName, loghandler.Handler)
-	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{}).Handle)
+	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{
+		RecoverPanic: true,
+		ErrorHandler: httperror.ErrorHandlerFunc(c.ErrorHandler), // TODO - default handler should be a handler?
+	}).Handle)
 
 	svr.BrowserMiddleware.Append(MiddlewareStaticName, func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// set the static handler in the context, so we can use it to build paths in
 			// templates.
-			r = r.WithContext(contextWithStaticHandler(r.Context(), sh))
+			r = r.WithContext(ctxkeys.ContextWithStaticHandler(r.Context(), sh))
 			h.ServeHTTP(w, r)
 		})
 	})
@@ -146,7 +152,7 @@ func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
 		for _, opt := range opts {
 			r = opt(r)
 		}
-		h.ServeHTTP(newResponseWriter(w), r)
+		h.ServeHTTP(NewResponseWriter(w), r)
 	}))
 }
 
