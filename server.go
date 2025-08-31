@@ -21,13 +21,14 @@ import (
 const staticPrefix = "/static/"
 
 const (
-	MiddlewareCSPName        = "csp"
-	MiddlewareCSRFName       = "csrf"
-	MiddlewareRequestIDName  = "requestid"
-	MiddlewareRequestLogName = "requestlog"
-	MiddlewareSessionName    = "session"
-	MiddlewareErrorName      = "error"
-	MiddlewareStaticName     = "static"
+	MiddlewareCSPName         = "csp"
+	MiddlewareCSRFName        = "csrf"
+	MiddlewareRequestIDName   = "requestid"
+	MiddlewareRequestLogName  = "requestlog"
+	MiddlewareSessionName     = "session"
+	MiddlewareErrorName       = "error"
+	MiddlewareStaticName      = "static"
+	MiddlewareBaseHeadersName = "baseheaders"
 )
 
 var DefaultCSPOpts = []csp.HandlerOpt{
@@ -102,6 +103,7 @@ func NewServer(c *Config) (*Server, error) {
 	svr.BaseMiddleware.Append(MiddlewareRequestIDName, func(h http.Handler) http.Handler {
 		return (&requestid.Middleware{}).Handler(h)
 	})
+	svr.BaseMiddleware.Append(MiddlewareBaseHeadersName, BaseHeaders)
 	svr.BaseMiddleware.Append(MiddlewareRequestLogName, loghandler.Handler)
 	svr.BaseMiddleware.Append(MiddlewareErrorName, (&httperror.Handler{
 		RecoverPanic: true,

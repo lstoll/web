@@ -81,7 +81,6 @@ func NewRequest(method string, url string, opts ...RequestOpt) *web.Request {
 	wr := web.NewRequestFrom(r.WithContext(ctx))
 
 	if ropts.sessionValues != nil {
-
 		for k, v := range ropts.sessionValues {
 			wr.Session().Set(k, v)
 		}
