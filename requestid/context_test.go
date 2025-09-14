@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 func TestContext(t *testing.T) {

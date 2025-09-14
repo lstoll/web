@@ -3,7 +3,7 @@ package requestid
 import (
 	"net/http"
 
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 // Middleware is a middleware that ensures a request ID is present on the

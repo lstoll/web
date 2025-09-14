@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/lstoll/web/slogctx"
+	"lds.li/web/slogctx"
 )
 
 func init() {

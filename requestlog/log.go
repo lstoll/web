@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lstoll/web/internal"
-	"github.com/lstoll/web/requestid"
-	"github.com/lstoll/web/slogctx"
+	"lds.li/web/internal"
+	"lds.li/web/requestid"
+	"lds.li/web/slogctx"
 )
 
 var _ internal.UnwrappableResponseWriter = (*loggingResponseWriter)(nil)

@@ -8,10 +8,10 @@ import (
 	"io/fs"
 	"net/http/httptest"
 
-	"github.com/lstoll/web"
-	"github.com/lstoll/web/internal/ctxkeys"
-	"github.com/lstoll/web/session"
-	"github.com/lstoll/web/static"
+	"lds.li/web"
+	"lds.li/web/internal/ctxkeys"
+	"lds.li/web/session"
+	"lds.li/web/static"
 )
 
 type requestOpts struct {

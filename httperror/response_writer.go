@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"net/http"
 
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 // ResponseWriter extends the standard http.ResponseWriter with a method to

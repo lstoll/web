@@ -3,7 +3,7 @@ package ctxkeys
 import (
 	"context"
 
-	"github.com/lstoll/web/static"
+	"lds.li/web/static"
 )
 
 type staticHandlerCtxKey struct{}

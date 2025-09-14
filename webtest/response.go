@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/lstoll/web"
+	"lds.li/web"
 )
 
 type Response struct {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 var _ internal.UnwrappableResponseWriter = (*hookRW)(nil)

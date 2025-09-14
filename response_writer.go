@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 // NewResponseWriter creates a new ResponseWriter

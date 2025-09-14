@@ -1,4 +1,4 @@
-module github.com/lstoll/web
+module lds.li/web
 
 go 1.25
 

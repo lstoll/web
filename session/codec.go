@@ -23,7 +23,7 @@ var _ codec = (*gobCodec)(nil)
 func init() {
 	// register with a fixed name, so renames/refactors don't break existing
 	// data.
-	gob.RegisterName("github.com/lstoll/web/session.persistedSession", persistedSession{})
+	gob.RegisterName("lds.li/web/session.persistedSession", persistedSession{})
 }
 
 type flashLevel string

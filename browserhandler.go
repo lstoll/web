@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/lstoll/web/httperror"
-	"github.com/lstoll/web/internal"
+	"lds.li/web/httperror"
+	"lds.li/web/internal"
 )
 
 type BrowserHandlerFunc func(context.Context, ResponseWriter, *Request) error

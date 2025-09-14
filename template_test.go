@@ -14,9 +14,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/lstoll/web/internal/ctxkeys"
-	"github.com/lstoll/web/session"
-	"github.com/lstoll/web/static"
+	"lds.li/web/internal/ctxkeys"
+	"lds.li/web/session"
+	"lds.li/web/static"
 )
 
 func TestTemplateFuncs(t *testing.T) {

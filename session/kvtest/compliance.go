@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lstoll/web/session"
+	"lds.li/web/session"
 )
 
 // RunComplianceTest runs a standard suite of tests against a KV implementation to ensure
