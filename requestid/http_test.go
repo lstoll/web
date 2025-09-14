@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 func TestHTTP(t *testing.T) {

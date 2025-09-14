@@ -7,9 +7,9 @@ import (
 
 	"maps"
 
-	"github.com/lstoll/web/csp"
-	"github.com/lstoll/web/internal/ctxkeys"
-	"github.com/lstoll/web/session"
+	"lds.li/web/csp"
+	"lds.li/web/internal/ctxkeys"
+	"lds.li/web/session"
 )
 
 func TemplateFuncs(ctx context.Context, addlFuncs template.FuncMap) template.FuncMap {

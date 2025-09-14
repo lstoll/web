@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql" // Import MySQL driver
-	"github.com/lstoll/web/session/kvtest"
-	"github.com/lstoll/web/session/sqlkv"
+	"lds.li/web/session/kvtest"
+	"lds.li/web/session/sqlkv"
 )
 
 // TestKV_MySQL tests the compliance of the MySQL implementation

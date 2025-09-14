@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/lstoll/web/csp"
-	"github.com/lstoll/web/session"
+	"lds.li/web/csp"
+	"lds.li/web/session"
 )
 
 func TestServer(t *testing.T) {

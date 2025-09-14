@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/lstoll/web/session/kvtest"
-	"github.com/lstoll/web/session/sqlkv"
+	"lds.li/web/session/kvtest"
+	"lds.li/web/session/sqlkv"
 )
 
 // TestKV_PostgreSQL tests the compliance of the PostgreSQL implementation with database/sql

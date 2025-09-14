@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/lstoll/web/form"
-	"github.com/lstoll/web/session"
+	"lds.li/web/form"
+	"lds.li/web/session"
 )
 
 type Request struct {

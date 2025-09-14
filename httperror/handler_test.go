@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/lstoll/web/internal"
+	"lds.li/web/internal"
 )
 
 func TestHTTPError(t *testing.T) {

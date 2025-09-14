@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lstoll/web/session/kvtest"
-	"github.com/lstoll/web/session/sqlkv"
 	_ "github.com/mattn/go-sqlite3" // Import SQLite driver
+	"lds.li/web/session/kvtest"
+	"lds.li/web/session/sqlkv"
 )
 
 func setupSQLiteDB(t *testing.T) (*sql.DB, func()) {

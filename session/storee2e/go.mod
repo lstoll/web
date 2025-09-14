@@ -1,11 +1,11 @@
-module github.com/lstoll/web/session/storee2e
+module lds.li/web/session/storee2e
 
 go 1.25
 
 require (
 	github.com/go-sql-driver/mysql v1.8.0
 	github.com/jackc/pgx/v5 v5.7.2
-	github.com/lstoll/web v0.0.0
+	lds.li/web v0.0.0
 	github.com/mattn/go-sqlite3 v1.14.28
 )
 
@@ -20,4 +20,4 @@ require (
 	golang.org/x/text v0.28.0 // indirect
 )
 
-replace github.com/lstoll/web => ../..
+replace lds.li/web => ../..
