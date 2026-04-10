@@ -93,6 +93,10 @@ type ManagerOpts struct {
 	Onload func(map[string]any) map[string]any
 	// Cookie settings
 	CookieOpts *SessionCookieOpts
+
+	// DBSCRefreshInterval defines how often the device must prove possession
+	// of its private key. If 0, DBSC is disabled. Typical values are 5-15 minutes.
+	DBSCRefreshInterval time.Duration
 }
 
 // NewCookieManager creates a new Manager that stores session data in cookies
@@ -206,6 +210,50 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 				if m.opts.Onload != nil {
 					sctx.sessdata.Data = m.opts.Onload(sctx.sessdata.Data)
 				}
+			}
+		}
+
+		// DBSC Expiration & Challenge Logic
+		if m.opts.DBSCRefreshInterval > 0 && len(sctx.sessdata.DBSCPublicKey) > 0 {
+			if time.Now().After(sctx.sessdata.DBSCExpiration) {
+				// Expired, we need to challenge or verify the response
+				respHeader := r.Header.Get("Sec-Session-Response")
+				if respHeader == "" || sctx.sessdata.DBSCChallenge == "" {
+					// No response yet or no active challenge, issue a new challenge
+					nonceBytes := make([]byte, 32)
+					rand.Read(nonceBytes)
+					nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+
+					sctx.sessdata.DBSCChallenge = nonce
+
+					// Save the session with the new challenge before responding
+					// sctx.save isn't processed automatically here since we return early
+					sctx.save = true
+					if err := m.saveSession(w, r, sctx); err != nil {
+						m.handleErr(w, r, err)
+						return
+					}
+
+					w.Header().Set("Sec-Session-Challenge", `"`+nonce+`"`)
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				// Verify the response
+				if err := verifyDBSCResponse(respHeader, sctx.sessdata.DBSCPublicKey, sctx.sessdata.DBSCChallenge); err != nil {
+					slog.WarnContext(r.Context(), "DBSC verification failed", "err", err)
+					if err := m.deleteSession(w, r, sctx); err != nil {
+						m.handleErr(w, r, err)
+						return
+					}
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+
+				// Verification successful
+				sctx.sessdata.DBSCExpiration = time.Now().Add(m.opts.DBSCRefreshInterval)
+				sctx.sessdata.DBSCChallenge = ""
+				sctx.save = true
 			}
 		}
 

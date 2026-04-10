@@ -43,6 +43,16 @@ type persistedSession struct {
 	UpdatedAt time.Time
 	Flash     flashLevel
 	FlashMsg  string
+
+	// --- DBSC Fields ---
+	// DBSCPublicKey is the device's public key (e.g., PEM or raw bytes, depending on algorithm)
+	DBSCPublicKey []byte
+	// DBSCAlgorithm is the algorithm used for the key (e.g., "ES256")
+	DBSCAlgorithm string
+	// DBSCExpiration tracks when the current "short-lived" proof expires.
+	DBSCExpiration time.Time
+	// DBSCChallenge is the active nonce sent to the client during a refresh challenge.
+	DBSCChallenge string
 }
 
 func (g *gobCodec) Encode(sess persistedSession) ([]byte, error) {

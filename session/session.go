@@ -2,7 +2,9 @@ package session
 
 import (
 	"maps"
+	"net/http"
 	"sync"
+	"time"
 )
 
 type sessionContextKey struct{}
@@ -115,5 +117,34 @@ func (s *Session) SetFlashError(message string) {
 func (s *Session) SetFlashMessage(message string) {
 	s.sessdata.FlashMsg = message
 	s.sessdata.Flash = flashLevelInfo
+	s.save = true
+}
+
+// IsDeviceBound returns true if the session is cryptographically bound to a device.
+func (s *Session) IsDeviceBound() bool {
+	s.sessdataMu.RLock()
+	defer s.sessdataMu.RUnlock()
+	return len(s.sessdata.DBSCPublicKey) > 0
+}
+
+// InitiateDBSCRegistration instructs the browser to generate a new key pair and
+// register it by making a request to the provided registration path.
+func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
+	// The Sec-Session-Registration header specifies the path where the browser
+	// should send the public key. We request ES256 as the algorithm.
+	w.Header().Add("Sec-Session-Registration", `(ES256); path="`+path+`"`)
+}
+
+// CompleteDBSCRegistration binds the session to the provided public key.
+func (s *Session) CompleteDBSCRegistration(publicKey []byte, alg string) {
+	s.sessdataMu.Lock()
+	defer s.sessdataMu.Unlock()
+
+	s.sessdata.DBSCPublicKey = publicKey
+	s.sessdata.DBSCAlgorithm = alg
+	// Start with an expired token to force an immediate refresh challenge, or
+	// set it to expire immediately. We will set it to time.Now() to effectively expire it.
+	s.sessdata.DBSCExpiration = time.Now()
+
 	s.save = true
 }
