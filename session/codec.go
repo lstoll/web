@@ -49,6 +49,9 @@ type persistedSession struct {
 	DBSCPublicKey []byte
 	// DBSCAlgorithm is the algorithm used for the key (e.g., "ES256")
 	DBSCAlgorithm string
+	// DBSCSessionID is the unique identifier sent to the browser during registration,
+	// used to identify the session during a refresh (Sec-Secure-Session-Id).
+	DBSCSessionID string
 	// DBSCExpiration tracks when the current "short-lived" proof expires.
 	DBSCExpiration time.Time
 	// DBSCChallenge is the active nonce sent to the client during a refresh challenge.

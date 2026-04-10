@@ -234,7 +234,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 						return
 					}
 
-					w.Header().Set("Sec-Session-Challenge", `"`+nonce+`"`)
+					w.Header().Set("Sec-Session-Challenge", `"`+nonce+`"; id="`+sctx.sessdata.DBSCSessionID+`"`)
 					w.WriteHeader(http.StatusUnauthorized)
 					return
 				}
@@ -254,6 +254,9 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 				sctx.sessdata.DBSCExpiration = time.Now().Add(m.opts.DBSCRefreshInterval)
 				sctx.sessdata.DBSCChallenge = ""
 				sctx.save = true
+
+				// CRITICAL: Rotate the session ID to permanently invalidate the stolen cookie
+				sctx.Reset()
 			}
 		}
 

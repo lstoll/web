@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,7 +64,7 @@ func TestDBSC(t *testing.T) {
 
 		// If we're setting up the test data:
 		if r.URL.Path == "/register" {
-			sess.CompleteDBSCRegistration(pubKeyBytes, "ES256")
+			sess.CompleteDBSCRegistration(pubKeyBytes, "ES256", "test-session-id-123")
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -107,9 +108,12 @@ func TestDBSC(t *testing.T) {
 		t.Fatal("expected Sec-Session-Challenge header")
 	}
 
-	// Remove quotes around the challenge nonce
-	challengeNonce := challenge[1 : len(challenge)-1]
+	// Parse challenge header, e.g., "nonce_string"; id="session_id"
+	parts := strings.SplitN(challenge, ";", 2)
+	challengeNonceRaw := strings.TrimSpace(parts[0])
 
+	// Remove quotes around the challenge nonce
+	challengeNonce := challengeNonceRaw[1 : len(challengeNonceRaw)-1]
 	// Request 3: Retry with valid Sec-Session-Response
 	req3 := httptest.NewRequest("GET", "/protected", nil)
 
@@ -171,5 +175,12 @@ func TestDBSC(t *testing.T) {
 
 	if rr4.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK without challenge, got %v", rr4.Code)
+	}
+
+	if sessionCookie2 == nil || sessionCookie2.Value == "" {
+		t.Fatal("expected a new session cookie to be set after successful challenge")
+	}
+	if sessionCookie2.Value == sessionCookie.Value {
+		t.Fatal("expected session cookie value to rotate after successful challenge")
 	}
 }

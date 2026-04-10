@@ -136,12 +136,16 @@ func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
 }
 
 // CompleteDBSCRegistration binds the session to the provided public key.
-func (s *Session) CompleteDBSCRegistration(publicKey []byte, alg string) {
+// Returns the unique DBSC session ID that should be returned to the client
+// (e.g. inside a JSON response or a cookie, though typically the browser
+// tracks the session via the refresh flow ID).
+func (s *Session) CompleteDBSCRegistration(publicKey []byte, alg string, dbscSessionID string) {
 	s.sessdataMu.Lock()
 	defer s.sessdataMu.Unlock()
 
 	s.sessdata.DBSCPublicKey = publicKey
 	s.sessdata.DBSCAlgorithm = alg
+	s.sessdata.DBSCSessionID = dbscSessionID
 	// Start with an expired token to force an immediate refresh challenge, or
 	// set it to expire immediately. We will set it to time.Now() to effectively expire it.
 	s.sessdata.DBSCExpiration = time.Now()
