@@ -100,12 +100,12 @@ func TestDBSC(t *testing.T) {
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)
 
-	if rr2.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 Unauthorized for expired DBSC session, got %v", rr2.Code)
+	if rr2.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for expired DBSC session, got %v", rr2.Code)
 	}
-	challenge := rr2.Header().Get("Sec-Session-Challenge")
+	challenge := rr2.Header().Get("Secure-Session-Challenge")
 	if challenge == "" {
-		t.Fatal("expected Sec-Session-Challenge header")
+		t.Fatal("expected Secure-Session-Challenge header")
 	}
 
 	// Parse challenge header, e.g., "nonce_string"; id="session_id"
@@ -131,8 +131,8 @@ func TestDBSC(t *testing.T) {
 		req3.AddCookie(sessionCookie)
 	}
 
-	headerJSON := `{"alg":"ES256"}`
-	payloadJSON := `{"nonce":"` + challengeNonce + `"}`
+	headerJSON := `{"alg":"ES256","typ":"dbsc+jwt"}`
+	payloadJSON := `{"jti":"` + challengeNonce + `"}`
 
 	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(headerJSON))
 	payloadB64 := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
@@ -140,7 +140,7 @@ func TestDBSC(t *testing.T) {
 	sigB64 := generateJWTSignature(t, privKey, headerB64, payloadB64)
 
 	jwtStr := headerB64 + "." + payloadB64 + "." + sigB64
-	req3.Header.Set("Sec-Session-Response", jwtStr)
+	req3.Header.Set("Secure-Session-Response", jwtStr)
 
 	rr3 := httptest.NewRecorder()
 	handler.ServeHTTP(rr3, req3)

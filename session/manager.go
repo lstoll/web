@@ -217,7 +217,10 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 		if m.opts.DBSCRefreshInterval > 0 && len(sctx.sessdata.DBSCPublicKey) > 0 {
 			if time.Now().After(sctx.sessdata.DBSCExpiration) {
 				// Expired, we need to challenge or verify the response
-				respHeader := r.Header.Get("Sec-Session-Response")
+				respHeader := r.Header.Get("Secure-Session-Response")
+				if respHeader == "" {
+					respHeader = r.Header.Get("Sec-Session-Response")
+				}
 				if respHeader == "" || sctx.sessdata.DBSCChallenge == "" {
 					// No response yet or no active challenge, issue a new challenge
 					nonceBytes := make([]byte, 32)
@@ -234,8 +237,10 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 						return
 					}
 
-					w.Header().Set("Sec-Session-Challenge", `"`+nonce+`"; id="`+sctx.sessdata.DBSCSessionID+`"`)
-					w.WriteHeader(http.StatusUnauthorized)
+					// DBSC uses 403 so the client retries with a proof (401 would terminate
+					// the session per the fetch integration in the spec).
+					w.Header().Set("Secure-Session-Challenge", `"`+nonce+`"; id="`+sctx.sessdata.DBSCSessionID+`"`)
+					w.WriteHeader(http.StatusForbidden)
 					return
 				}
 

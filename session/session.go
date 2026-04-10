@@ -1,6 +1,8 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"maps"
 	"net/http"
 	"sync"
@@ -127,12 +129,34 @@ func (s *Session) IsDeviceBound() bool {
 	return len(s.sessdata.DBSCPublicKey) > 0
 }
 
+// PendingDBSCRegistrationChallenge returns the challenge from the last
+// InitiateDBSCRegistration, for verifying the registration JWT on the
+// registration endpoint.
+func (s *Session) PendingDBSCRegistrationChallenge() string {
+	s.sessdataMu.RLock()
+	defer s.sessdataMu.RUnlock()
+	return s.sessdata.DBSCRegistrationChallenge
+}
+
 // InitiateDBSCRegistration instructs the browser to generate a new key pair and
 // register it by making a request to the provided registration path.
+// It sets Secure-Session-Registration (DBSC) with a fresh challenge; the
+// registration JWT's jti claim must match that challenge.
 func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
-	// The Sec-Session-Registration header specifies the path where the browser
-	// should send the public key. We request ES256 as the algorithm.
-	w.Header().Add("Sec-Session-Registration", `(ES256); path="`+path+`"`)
+	challengeBytes := make([]byte, 32)
+	if _, err := rand.Read(challengeBytes); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	challenge := base64.RawURLEncoding.EncodeToString(challengeBytes)
+
+	s.sessdataMu.Lock()
+	s.sessdata.DBSCRegistrationChallenge = challenge
+	s.save = true
+	s.sessdataMu.Unlock()
+
+	// Chrome and the DBSC spec use the Secure-Session-* header names.
+	w.Header().Add("Secure-Session-Registration", `(ES256);path="`+path+`";challenge="`+challenge+`"`)
 }
 
 // CompleteDBSCRegistration binds the session to the provided public key.
@@ -143,6 +167,7 @@ func (s *Session) CompleteDBSCRegistration(publicKey []byte, alg string, dbscSes
 	s.sessdataMu.Lock()
 	defer s.sessdataMu.Unlock()
 
+	s.sessdata.DBSCRegistrationChallenge = ""
 	s.sessdata.DBSCPublicKey = publicKey
 	s.sessdata.DBSCAlgorithm = alg
 	s.sessdata.DBSCSessionID = dbscSessionID

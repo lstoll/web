@@ -52,6 +52,9 @@ type persistedSession struct {
 	// DBSCSessionID is the unique identifier sent to the browser during registration,
 	// used to identify the session during a refresh (Sec-Secure-Session-Id).
 	DBSCSessionID string
+	// DBSCRegistrationChallenge is the challenge from Secure-Session-Registration, used
+	// to verify the registration JWT's jti claim. Cleared after CompleteDBSCRegistration.
+	DBSCRegistrationChallenge string
 	// DBSCExpiration tracks when the current "short-lived" proof expires.
 	DBSCExpiration time.Time
 	// DBSCChallenge is the active nonce sent to the client during a refresh challenge.
