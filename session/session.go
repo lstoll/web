@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"maps"
 	"net/http"
 	"sync"
@@ -126,7 +127,7 @@ func (s *Session) SetFlashMessage(message string) {
 func (s *Session) IsDeviceBound() bool {
 	s.sessdataMu.RLock()
 	defer s.sessdataMu.RUnlock()
-	return len(s.sessdata.DBSCPublicKey) > 0
+	return len(s.sessdata.DBSCPublicJWKS) > 0
 }
 
 // PendingDBSCRegistrationChallenge returns the challenge from the last
@@ -142,6 +143,11 @@ func (s *Session) PendingDBSCRegistrationChallenge() string {
 // register it by making a request to the provided registration path.
 // It sets Secure-Session-Registration (DBSC) with a fresh challenge; the
 // registration JWT's jti claim must match that challenge.
+//
+// The registration HTTP handler (the route given by path) must call
+// CompleteDBSCRegistrationWithProof with the same request that carries
+// Secure-Session-Response. Session middleware cannot do this alone: it does not
+// know the DBSC session_identifier you will return in JSON session instructions.
 func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
 	challengeBytes := make([]byte, 32)
 	if _, err := rand.Read(challengeBytes); err != nil {
@@ -159,21 +165,40 @@ func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
 	w.Header().Add("Secure-Session-Registration", `(ES256);path="`+path+`";challenge="`+challenge+`"`)
 }
 
-// CompleteDBSCRegistration binds the session to the provided public key.
-// Returns the unique DBSC session ID that should be returned to the client
-// (e.g. inside a JSON response or a cookie, though typically the browser
-// tracks the session via the refresh flow ID).
-func (s *Session) CompleteDBSCRegistration(publicKey []byte, alg string, dbscSessionID string) {
+// CompleteDBSCRegistrationWithProof verifies the registration DBSC proof JWT on
+// r (Secure-Session-Response), checks jti against the pending challenge from
+// InitiateDBSCRegistration, and stores Tink’s JWKS for that key for refresh
+// verification. dbscSessionID is the identifier you return in JSON session
+// instructions to the browser (§9.6).
+func (s *Session) CompleteDBSCRegistrationWithProof(r *http.Request, dbscSessionID string) error {
+	tok := r.Header.Get("Secure-Session-Response")
+	if tok == "" {
+		tok = r.Header.Get("Sec-Session-Response")
+	}
+	if tok == "" {
+		return errors.New("missing Secure-Session-Response")
+	}
+	if dbscSessionID == "" {
+		return errors.New("empty dbsc session identifier")
+	}
+
 	s.sessdataMu.Lock()
 	defer s.sessdataMu.Unlock()
 
-	s.sessdata.DBSCRegistrationChallenge = ""
-	s.sessdata.DBSCPublicKey = publicKey
-	s.sessdata.DBSCAlgorithm = alg
-	s.sessdata.DBSCSessionID = dbscSessionID
-	// Start with an expired token to force an immediate refresh challenge, or
-	// set it to expire immediately. We will set it to time.Now() to effectively expire it.
-	s.sessdata.DBSCExpiration = time.Now()
+	ch := s.sessdata.DBSCRegistrationChallenge
+	if ch == "" {
+		return errors.New("no pending DBSC registration challenge")
+	}
 
+	jwks, err := verifyDBSCRegistrationProofAndJWKS(tok, ch)
+	if err != nil {
+		return err
+	}
+
+	s.sessdata.DBSCRegistrationChallenge = ""
+	s.sessdata.DBSCPublicJWKS = jwks
+	s.sessdata.DBSCSessionID = dbscSessionID
+	s.sessdata.DBSCExpiration = time.Now()
 	s.save = true
+	return nil
 }

@@ -5,8 +5,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,12 +24,50 @@ func generateJWTSignature(t *testing.T, privKey *ecdsa.PrivateKey, header, paylo
 	rBytes := r.Bytes()
 	sBytes := s.Bytes()
 
-	// Pad with zeros to 32 bytes
 	sigBytes := make([]byte, 64)
 	copy(sigBytes[32-len(rBytes):32], rBytes)
 	copy(sigBytes[64-len(sBytes):64], sBytes)
 
 	return base64.RawURLEncoding.EncodeToString(sigBytes)
+}
+
+func ecCoordBytes(n *big.Int, size int) []byte {
+	b := n.Bytes()
+	if len(b) > size {
+		panic("coordinate exceeds field")
+	}
+	out := make([]byte, size)
+	copy(out[size-len(b):], b)
+	return out
+}
+
+// es256JWKJSON returns a JSON object (for embedding in a JWT header) for tests only.
+func es256JWKJSON(t *testing.T, pub *ecdsa.PublicKey) string {
+	t.Helper()
+	if pub.Curve != elliptic.P256() {
+		t.Fatal("P-256 only")
+	}
+	byteLen := (pub.Curve.Params().BitSize + 7) / 8
+	x := ecCoordBytes(pub.X, byteLen)
+	y := ecCoordBytes(pub.Y, byteLen)
+	return `{"kty":"EC","crv":"P-256","alg":"ES256","x":"` +
+		base64.RawURLEncoding.EncodeToString(x) + `","y":"` +
+		base64.RawURLEncoding.EncodeToString(y) + `"}`
+}
+
+func challengeFromSecureSessionRegistration(t *testing.T, reg string) string {
+	t.Helper()
+	const prefix = `challenge="`
+	i := strings.Index(reg, prefix)
+	if i < 0 {
+		t.Fatalf("no challenge in %q", reg)
+	}
+	i += len(prefix)
+	j := strings.IndexByte(reg[i:], '"')
+	if j < 0 {
+		t.Fatalf("unterminated challenge in %q", reg)
+	}
+	return reg[i : i+j]
 }
 
 func TestDBSC(t *testing.T) {
@@ -45,57 +83,85 @@ func TestDBSC(t *testing.T) {
 		t.Fatalf("creating manager: %v", err)
 	}
 
-	// 1. Generate an ES256 key pair
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generating key: %v", err)
 	}
-	pubKeyBytes, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
-	if err != nil {
-		t.Fatalf("marshaling public key: %v", err)
-	}
 
-	// 2. Wrap a handler
 	handler := mgr.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := FromContext(r.Context())
 		if !ok {
 			t.Fatal("no session in context")
 		}
 
-		// If we're setting up the test data:
-		if r.URL.Path == "/register" {
-			sess.CompleteDBSCRegistration(pubKeyBytes, "ES256", "test-session-id-123")
+		switch r.URL.Path {
+		case "/start":
+			sess.InitiateDBSCRegistration(w, "/register")
 			w.WriteHeader(http.StatusOK)
-			return
+		case "/register":
+			if err := sess.CompleteDBSCRegistrationWithProof(r, "test-session-id-123"); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
 		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
 	}))
 
-	// Request 1: Registration
-	req1 := httptest.NewRequest("POST", "/register", nil)
-	rr1 := httptest.NewRecorder()
-	handler.ServeHTTP(rr1, req1)
-
-	if rr1.Code != http.StatusOK {
-		t.Fatalf("registration failed: %v", rr1.Code)
+	// 1. Start DBSC registration (challenge stored on session)
+	req0 := httptest.NewRequest(http.MethodGet, "/start", nil)
+	rr0 := httptest.NewRecorder()
+	handler.ServeHTTP(rr0, req0)
+	if rr0.Code != http.StatusOK {
+		t.Fatalf("start: %v", rr0.Code)
 	}
+	reg := rr0.Header().Get("Secure-Session-Registration")
+	regChallenge := challengeFromSecureSessionRegistration(t, reg)
 
-	// Get session cookie
 	var sessionCookie *http.Cookie
-	for _, c := range rr1.Result().Cookies() {
+	for _, c := range rr0.Result().Cookies() {
 		if c.Name == "__Host-session-id" {
 			sessionCookie = c
 			break
 		}
 	}
 	if sessionCookie == nil {
-		t.Fatal("no session cookie set")
+		t.Fatal("no session cookie after /start")
 	}
 
-	// Request 2: Normal request (fails because expiration is set to Now() during CompleteDBSCRegistration)
-	req2 := httptest.NewRequest("GET", "/protected", nil)
+	// 2. Registration POST with Tink-shaped proof (JWK in header)
+	jwk := es256JWKJSON(t, &privKey.PublicKey)
+	headerJSON := `{"alg":"ES256","typ":"dbsc+jwt","jwk":` + jwk + `}`
+	payloadJSON := `{"jti":"` + regChallenge + `"}`
+	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(headerJSON))
+	payloadB64 := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
+	sigB64 := generateJWTSignature(t, privKey, headerB64, payloadB64)
+	regJWT := headerB64 + "." + payloadB64 + "." + sigB64
+
+	req1 := httptest.NewRequest(http.MethodPost, "/register", nil)
+	req1.AddCookie(sessionCookie)
+	req1.Header.Set("Secure-Session-Response", regJWT)
+	rr1 := httptest.NewRecorder()
+	handler.ServeHTTP(rr1, req1)
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("registration failed: %v %s", rr1.Code, rr1.Body.String())
+	}
+
+	var sessionCookieAfterReg *http.Cookie
+	for _, c := range rr1.Result().Cookies() {
+		if c.Name == "__Host-session-id" {
+			sessionCookieAfterReg = c
+			break
+		}
+	}
+	if sessionCookieAfterReg != nil && sessionCookieAfterReg.Value != "" {
+		sessionCookie = sessionCookieAfterReg
+	}
+
+	// 3. Protected request — DBSC expiration forces challenge
+	req2 := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req2.AddCookie(sessionCookie)
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)
@@ -108,16 +174,12 @@ func TestDBSC(t *testing.T) {
 		t.Fatal("expected Secure-Session-Challenge header")
 	}
 
-	// Parse challenge header, e.g., "nonce_string"; id="session_id"
 	parts := strings.SplitN(challenge, ";", 2)
 	challengeNonceRaw := strings.TrimSpace(parts[0])
-
-	// Remove quotes around the challenge nonce
 	challengeNonce := challengeNonceRaw[1 : len(challengeNonceRaw)-1]
-	// Request 3: Retry with valid Sec-Session-Response
-	req3 := httptest.NewRequest("GET", "/protected", nil)
 
-	// Read the new session cookie if one was set during the challenge
+	req3 := httptest.NewRequest(http.MethodGet, "/protected", nil)
+
 	var sessionCookie2 *http.Cookie
 	for _, c := range rr2.Result().Cookies() {
 		if c.Name == "__Host-session-id" {
@@ -131,16 +193,14 @@ func TestDBSC(t *testing.T) {
 		req3.AddCookie(sessionCookie)
 	}
 
-	headerJSON := `{"alg":"ES256","typ":"dbsc+jwt"}`
-	payloadJSON := `{"jti":"` + challengeNonce + `"}`
-
-	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(headerJSON))
-	payloadB64 := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
-
-	sigB64 := generateJWTSignature(t, privKey, headerB64, payloadB64)
-
-	jwtStr := headerB64 + "." + payloadB64 + "." + sigB64
-	req3.Header.Set("Secure-Session-Response", jwtStr)
+	// Refresh proof: no jwk in header (§9.10)
+	refreshHeaderJSON := `{"alg":"ES256","typ":"dbsc+jwt"}`
+	refreshPayloadJSON := `{"jti":"` + challengeNonce + `"}`
+	rhB64 := base64.RawURLEncoding.EncodeToString([]byte(refreshHeaderJSON))
+	rpB64 := base64.RawURLEncoding.EncodeToString([]byte(refreshPayloadJSON))
+	rsigB64 := generateJWTSignature(t, privKey, rhB64, rpB64)
+	refreshJWT := rhB64 + "." + rpB64 + "." + rsigB64
+	req3.Header.Set("Secure-Session-Response", refreshJWT)
 
 	rr3 := httptest.NewRecorder()
 	handler.ServeHTTP(rr3, req3)
@@ -152,10 +212,8 @@ func TestDBSC(t *testing.T) {
 		t.Fatalf("expected body 'ok', got %q", rr3.Body.String())
 	}
 
-	// Request 4: Request again immediately, should not challenge
-	req4 := httptest.NewRequest("GET", "/protected", nil)
+	req4 := httptest.NewRequest(http.MethodGet, "/protected", nil)
 
-	// Read the new session cookie if one was set during the success
 	var sessionCookie3 *http.Cookie
 	for _, c := range rr3.Result().Cookies() {
 		if c.Name == "__Host-session-id" {

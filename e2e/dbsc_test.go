@@ -40,14 +40,6 @@ func (m *memoryKV) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func dbscProofHeader(h http.Header) string {
-	v := h.Get("Secure-Session-Response")
-	if v != "" {
-		return v
-	}
-	return h.Get("Sec-Session-Response")
-}
-
 func networkHeader(headers network.Headers, name string) string {
 	if headers == nil {
 		return ""
@@ -95,22 +87,8 @@ func TestDBSC_E2E(t *testing.T) {
 
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		sess := session.MustFromContext(r.Context())
-		expected := sess.PendingDBSCRegistrationChallenge()
-		if expected == "" {
+		if sess.PendingDBSCRegistrationChallenge() == "" {
 			http.Error(w, "missing registration challenge on session", http.StatusBadRequest)
-			return
-		}
-
-		proof := dbscProofHeader(r.Header)
-		if proof == "" {
-			http.Error(w, "missing Secure-Session-Response", http.StatusBadRequest)
-			return
-		}
-
-		pubDER, err := session.ParseDBSCRegistrationProof(proof, expected)
-		if err != nil {
-			t.Logf("registration proof rejected: %v", err)
-			http.Error(w, "invalid registration proof", http.StatusUnauthorized)
 			return
 		}
 
@@ -120,7 +98,12 @@ func TestDBSC_E2E(t *testing.T) {
 			return
 		}
 		dbscID := hex.EncodeToString(dbscIDBytes)
-		sess.CompleteDBSCRegistration(pubDER, "ES256", dbscID)
+
+		if err := sess.CompleteDBSCRegistrationWithProof(r, dbscID); err != nil {
+			t.Logf("registration proof rejected: %v", err)
+			http.Error(w, "invalid registration proof", http.StatusUnauthorized)
+			return
+		}
 
 		origin := "https://" + r.Host
 		instructions := map[string]any{

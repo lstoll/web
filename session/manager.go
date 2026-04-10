@@ -214,7 +214,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 		}
 
 		// DBSC Expiration & Challenge Logic
-		if m.opts.DBSCRefreshInterval > 0 && len(sctx.sessdata.DBSCPublicKey) > 0 {
+		if m.opts.DBSCRefreshInterval > 0 && len(sctx.sessdata.DBSCPublicJWKS) > 0 {
 			if time.Now().After(sctx.sessdata.DBSCExpiration) {
 				// Expired, we need to challenge or verify the response
 				respHeader := r.Header.Get("Secure-Session-Response")
@@ -239,13 +239,13 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 
 					// DBSC uses 403 so the client retries with a proof (401 would terminate
 					// the session per the fetch integration in the spec).
-					w.Header().Set("Secure-Session-Challenge", `"`+nonce+`"; id="`+sctx.sessdata.DBSCSessionID+`"`)
+					w.Header().Set("Secure-Session-Challenge", `"`+nonce+`";id="`+sctx.sessdata.DBSCSessionID+`"`)
 					w.WriteHeader(http.StatusForbidden)
 					return
 				}
 
 				// Verify the response
-				if err := verifyDBSCResponse(respHeader, sctx.sessdata.DBSCPublicKey, sctx.sessdata.DBSCChallenge); err != nil {
+				if err := verifyDBSCResponse(respHeader, sctx.sessdata.DBSCPublicJWKS, sctx.sessdata.DBSCChallenge); err != nil {
 					slog.WarnContext(r.Context(), "DBSC verification failed", "err", err)
 					if err := m.deleteSession(w, r, sctx); err != nil {
 						m.handleErr(w, r, err)
