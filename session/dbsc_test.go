@@ -74,8 +74,10 @@ func TestDBSC(t *testing.T) {
 	kv := &memoryKV{contents: make(map[string]kvItem)}
 
 	opts := &ManagerOpts{
-		IdleTimeout:         1 * time.Hour,
-		DBSCRefreshInterval: 5 * time.Minute,
+		IdleTimeout:            1 * time.Hour,
+		DBSCRefreshInterval:    5 * time.Minute,
+		DBSCRegistrationPath:   "/register",
+		DBSCRefreshPath:        "/dbsc/refresh",
 	}
 
 	mgr, err := NewKVManager(kv, opts)
@@ -96,13 +98,7 @@ func TestDBSC(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/start":
-			sess.InitiateDBSCRegistration(w, "/register")
-			w.WriteHeader(http.StatusOK)
-		case "/register":
-			if err := sess.CompleteDBSCRegistrationWithProof(r, "test-session-id-123"); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
+			sess.Set("bootstrap", "1")
 			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusOK)

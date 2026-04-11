@@ -3,14 +3,21 @@ package session
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
+	"log/slog"
 	"maps"
 	"net/http"
 	"sync"
-	"time"
 )
 
 type sessionContextKey struct{}
+
+// dbscServeConfigKey is used by Manager.Wrap to pass registration path into
+// InitiateDBSCRegistration.
+type dbscServeConfigKey struct{}
+
+type dbscServeConfig struct {
+	RegistrationPath string
+}
 
 // Session represents a tracked web session.
 type Session struct {
@@ -130,25 +137,21 @@ func (s *Session) IsDeviceBound() bool {
 	return len(s.sessdata.DBSCPublicJWKS) > 0
 }
 
-// PendingDBSCRegistrationChallenge returns the challenge from the last
-// InitiateDBSCRegistration, for verifying the registration JWT on the
-// registration endpoint.
-func (s *Session) PendingDBSCRegistrationChallenge() string {
-	s.sessdataMu.RLock()
-	defer s.sessdataMu.RUnlock()
-	return s.sessdata.DBSCRegistrationChallenge
-}
-
-// InitiateDBSCRegistration instructs the browser to generate a new key pair and
-// register it by making a request to the provided registration path.
-// It sets Secure-Session-Registration (DBSC) with a fresh challenge; the
-// registration JWT's jti claim must match that challenge.
+// InitiateDBSCRegistration adds Secure-Session-Registration immediately.
+// When DBSC is enabled, the manager normally attaches this header automatically
+// on the first HTTP response that persists session data (after Set/SetAll), as
+// long as the session is not yet device-bound and has at least one key in Data.
+// Call this if you need a registration offer without that save (e.g. empty Data)
+// or to replace the current pending challenge.
 //
-// The registration HTTP handler (the route given by path) must call
-// CompleteDBSCRegistrationWithProof with the same request that carries
-// Secure-Session-Response. Session middleware cannot do this alone: it does not
-// know the DBSC session_identifier you will return in JSON session instructions.
-func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
+// Requires DBSCRefreshInterval and DBSCRegistrationPath on the session Manager.
+func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, r *http.Request) {
+	cfg, ok := r.Context().Value(dbscServeConfigKey{}).(dbscServeConfig)
+	if !ok || cfg.RegistrationPath == "" {
+		http.Error(w, "DBSC registration path not configured on session manager", http.StatusInternalServerError)
+		return
+	}
+
 	challengeBytes := make([]byte, 32)
 	if _, err := rand.Read(challengeBytes); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -161,44 +164,7 @@ func (s *Session) InitiateDBSCRegistration(w http.ResponseWriter, path string) {
 	s.save = true
 	s.sessdataMu.Unlock()
 
-	// Chrome and the DBSC spec use the Secure-Session-* header names.
-	w.Header().Add("Secure-Session-Registration", `(ES256);path="`+path+`";challenge="`+challenge+`"`)
-}
-
-// CompleteDBSCRegistrationWithProof verifies the registration DBSC proof JWT on
-// r (Secure-Session-Response), checks jti against the pending challenge from
-// InitiateDBSCRegistration, and stores Tink’s JWKS for that key for refresh
-// verification. dbscSessionID is the identifier you return in JSON session
-// instructions to the browser (§9.6).
-func (s *Session) CompleteDBSCRegistrationWithProof(r *http.Request, dbscSessionID string) error {
-	tok := r.Header.Get("Secure-Session-Response")
-	if tok == "" {
-		tok = r.Header.Get("Sec-Session-Response")
-	}
-	if tok == "" {
-		return errors.New("missing Secure-Session-Response")
-	}
-	if dbscSessionID == "" {
-		return errors.New("empty dbsc session identifier")
-	}
-
-	s.sessdataMu.Lock()
-	defer s.sessdataMu.Unlock()
-
-	ch := s.sessdata.DBSCRegistrationChallenge
-	if ch == "" {
-		return errors.New("no pending DBSC registration challenge")
-	}
-
-	jwks, err := verifyDBSCRegistrationProofAndJWKS(tok, ch)
-	if err != nil {
-		return err
-	}
-
-	s.sessdata.DBSCRegistrationChallenge = ""
-	s.sessdata.DBSCPublicJWKS = jwks
-	s.sessdata.DBSCSessionID = dbscSessionID
-	s.sessdata.DBSCExpiration = time.Now()
-	s.save = true
-	return nil
+	w.Header().Add("Secure-Session-Registration", `(ES256);path="`+cfg.RegistrationPath+`";challenge="`+challenge+`"`)
+	slog.DebugContext(r.Context(), "dbsc InitiateDBSCRegistration",
+		"path", cfg.RegistrationPath, "challenge_len", len(challenge))
 }

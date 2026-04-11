@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -97,6 +99,17 @@ type ManagerOpts struct {
 	// DBSCRefreshInterval defines how often the device must prove possession
 	// of its private key. If 0, DBSC is disabled. Typical values are 5-15 minutes.
 	DBSCRefreshInterval time.Duration
+	// DBSCRegistrationPath is the URL path where the browser POSTs the registration
+	// proof (Secure-Session-Response). When non-empty and DBSCRefreshInterval is set,
+	// the manager handles POSTs to this path and responds with JSON session
+	// instructions; your mux does not need a separate registration handler.
+	// Secure-Session-Registration is also emitted automatically when a response
+	// saves session data (see Session.InitiateDBSCRegistration for edge cases).
+	DBSCRegistrationPath string
+	// DBSCRefreshPath is the refresh_url placed in session instructions. Defaults
+	// to "/dbsc/refresh" if empty. You should serve this path (e.g. 200 OK) so the
+	// user agent can complete refresh handshakes.
+	DBSCRefreshPath string
 }
 
 // NewCookieManager creates a new Manager that stores session data in cookies
@@ -213,6 +226,10 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			}
 		}
 
+		if m.tryHandleDBSCRegistration(w, r, sctx) {
+			return
+		}
+
 		// DBSC Expiration & Challenge Logic
 		if m.opts.DBSCRefreshInterval > 0 && len(sctx.sessdata.DBSCPublicJWKS) > 0 {
 			if time.Now().After(sctx.sessdata.DBSCExpiration) {
@@ -265,7 +282,13 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			}
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, sctx))
+		ctx := context.WithValue(r.Context(), sessionContextKey{}, sctx)
+		if m.opts.DBSCRefreshInterval > 0 && m.opts.DBSCRegistrationPath != "" {
+			ctx = context.WithValue(ctx, dbscServeConfigKey{}, dbscServeConfig{
+				RegistrationPath: m.opts.DBSCRegistrationPath,
+			})
+		}
+		r = r.WithContext(ctx)
 
 		hw := &hookRW{
 			ResponseWriter: w,
@@ -320,6 +343,11 @@ func (m *Manager) saveHook(r *http.Request, sctx *Session) func(w http.ResponseW
 
 		// If we need to save the session
 		if sctx.save || sctx.reset {
+			// DBSC registration is a response header; this hook runs before the first
+			// Write/WriteHeader reaches the client, so we can still add it here.
+			if sctx.save && !sctx.delete && !sctx.reset {
+				m.maybeAttachDBSCRegistrationOffer(w, r, sctx)
+			}
 			if err := m.saveSession(w, r, sctx); err != nil {
 				m.handleErr(w, r, err)
 				return false
@@ -497,6 +525,173 @@ func managerRemoveCookieByName(w http.ResponseWriter, cookieName string) {
 	for _, cookie := range updatedCookies {
 		headers.Add("Set-Cookie", cookie)
 	}
+}
+
+// maybeAttachDBSCRegistrationOffer sets Secure-Session-Registration when the
+// session is being persisted, DBSC is configured, the session is not yet device
+// bound, and there is no pending registration challenge. We only do this when
+// the session carries at least one application data key so anonymous hits that
+// never call Set do not trigger registration.
+func (m *Manager) maybeAttachDBSCRegistrationOffer(w http.ResponseWriter, r *http.Request, sctx *Session) {
+	if m.opts.DBSCRefreshInterval == 0 || m.opts.DBSCRegistrationPath == "" {
+		slog.DebugContext(r.Context(), "dbsc registration offer skipped", "reason", "dbsc_not_configured")
+		return
+	}
+	if len(sctx.sessdata.DBSCPublicJWKS) != 0 {
+		slog.DebugContext(r.Context(), "dbsc registration offer skipped", "reason", "already_device_bound")
+		return
+	}
+	if sctx.sessdata.DBSCRegistrationChallenge != "" {
+		slog.DebugContext(r.Context(), "dbsc registration offer skipped", "reason", "challenge_already_pending")
+		return
+	}
+	if len(sctx.sessdata.Data) == 0 {
+		slog.DebugContext(r.Context(), "dbsc registration offer skipped", "reason", "no_session_data_keys")
+		return
+	}
+
+	challengeBytes := make([]byte, 32)
+	if _, err := rand.Read(challengeBytes); err != nil {
+		slog.WarnContext(r.Context(), "DBSC registration challenge", "err", err)
+		return
+	}
+	challenge := base64.RawURLEncoding.EncodeToString(challengeBytes)
+	sctx.sessdata.DBSCRegistrationChallenge = challenge
+	w.Header().Add("Secure-Session-Registration", `(ES256);path="`+m.opts.DBSCRegistrationPath+`";challenge="`+challenge+`"`)
+	slog.DebugContext(r.Context(), "dbsc registration offer attached",
+		"registration_path", m.opts.DBSCRegistrationPath,
+		"challenge_len", len(challenge))
+}
+
+func (m *Manager) dbscRefreshPath() string {
+	if m.opts.DBSCRefreshPath != "" {
+		return m.opts.DBSCRefreshPath
+	}
+	return "/dbsc/refresh"
+}
+
+func (m *Manager) dbscCookieCredentialAttributes() string {
+	var b strings.Builder
+	if p := m.cookieSettings.Path; p != "" {
+		b.WriteString("Path=")
+		b.WriteString(p)
+		b.WriteString("; ")
+	}
+	b.WriteString("HttpOnly")
+	if !m.cookieSettings.Insecure {
+		b.WriteString("; Secure")
+	}
+	b.WriteString("; SameSite=Lax")
+	return b.String()
+}
+
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if p := r.Header.Get("X-Forwarded-Proto"); p == "https" || p == "http" {
+		scheme = p
+	}
+	return scheme + "://" + r.Host
+}
+
+func randomDBSCSessionID() (string, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func (m *Manager) dbscRegistrationInstructions(r *http.Request, sessionID string) ([]byte, error) {
+	origin := requestOrigin(r)
+	instructions := map[string]any{
+		"session_identifier": sessionID,
+		"refresh_url":        m.dbscRefreshPath(),
+		"scope": map[string]any{
+			"origin":               origin,
+			"include_site":         false,
+			"scope_specification":  []any{},
+		},
+		"credentials": []map[string]string{{
+			"type":       "cookie",
+			"name":       m.cookieSettings.Name,
+			"attributes": m.dbscCookieCredentialAttributes(),
+		}},
+	}
+	return json.Marshal(instructions)
+}
+
+// tryHandleDBSCRegistration handles POST DBSC registration proofs before the wrapped handler runs.
+func (m *Manager) tryHandleDBSCRegistration(w http.ResponseWriter, r *http.Request, sctx *Session) bool {
+	if m.opts.DBSCRefreshInterval == 0 || m.opts.DBSCRegistrationPath == "" {
+		return false
+	}
+	if r.Method != http.MethodPost || r.URL.Path != m.opts.DBSCRegistrationPath {
+		return false
+	}
+	slog.DebugContext(r.Context(), "dbsc registration handler considering request",
+		"method", r.Method, "path", r.URL.Path,
+		"has_jwks", len(sctx.sessdata.DBSCPublicJWKS) > 0,
+		"has_pending_challenge", sctx.sessdata.DBSCRegistrationChallenge != "")
+	if len(sctx.sessdata.DBSCPublicJWKS) != 0 {
+		slog.DebugContext(r.Context(), "dbsc registration POST not handled", "reason", "already_bound")
+		return false
+	}
+	if sctx.sessdata.DBSCRegistrationChallenge == "" {
+		slog.DebugContext(r.Context(), "dbsc registration POST not handled", "reason", "no_pending_challenge")
+		return false
+	}
+
+	tok := r.Header.Get("Secure-Session-Response")
+	if tok == "" {
+		tok = r.Header.Get("Sec-Session-Response")
+	}
+	if tok == "" {
+		slog.DebugContext(r.Context(), "dbsc registration POST rejected", "reason", "missing_secure_session_response")
+		http.Error(w, "missing Secure-Session-Response", http.StatusBadRequest)
+		return true
+	}
+	slog.DebugContext(r.Context(), "dbsc registration verifying proof", "header_len", len(tok))
+
+	jwks, err := verifyDBSCRegistrationProofAndJWKS(r.Context(), tok, sctx.sessdata.DBSCRegistrationChallenge)
+	if err != nil {
+		slog.WarnContext(r.Context(), "DBSC registration proof rejected", "err", err)
+		http.Error(w, "invalid registration proof", http.StatusUnauthorized)
+		return true
+	}
+
+	sessionID, err := randomDBSCSessionID()
+	if err != nil {
+		m.handleErr(w, r, err)
+		return true
+	}
+
+	sctx.sessdata.DBSCRegistrationChallenge = ""
+	sctx.sessdata.DBSCPublicJWKS = jwks
+	sctx.sessdata.DBSCSessionID = sessionID
+	sctx.sessdata.DBSCExpiration = time.Now()
+	sctx.save = true
+	if err := m.saveSession(w, r, sctx); err != nil {
+		m.handleErr(w, r, err)
+		return true
+	}
+
+	body, err := m.dbscRegistrationInstructions(r, sessionID)
+	if err != nil {
+		m.handleErr(w, r, err)
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(body); err != nil {
+		slog.WarnContext(r.Context(), "write DBSC registration body", "err", err)
+	}
+	slog.DebugContext(r.Context(), "dbsc registration completed",
+		"session_identifier_len", len(sessionID),
+		"instructions_len", len(body))
+	return true
 }
 
 func (m *Manager) handleErr(w http.ResponseWriter, r *http.Request, err error) {

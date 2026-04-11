@@ -2,10 +2,7 @@ package e2e
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/tls"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,8 +61,10 @@ func TestDBSC_E2E(t *testing.T) {
 
 	kv := &memoryKV{data: make(map[string][]byte)}
 	opts := &session.ManagerOpts{
-		IdleTimeout:         1 * time.Hour,
-		DBSCRefreshInterval: 5 * time.Minute,
+		IdleTimeout:            1 * time.Hour,
+		DBSCRefreshInterval:    5 * time.Minute,
+		DBSCRegistrationPath:   "/register",
+		DBSCRefreshPath:        "/dbsc/refresh",
 	}
 
 	mgr, err := session.NewKVManager(kv, opts)
@@ -78,54 +77,9 @@ func TestDBSC_E2E(t *testing.T) {
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		sess := session.MustFromContext(r.Context())
 		sess.Set("user", "alice")
-		sess.InitiateDBSCRegistration(w, "/register")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("logged in")); err != nil {
 			t.Errorf("write login body: %v", err)
-		}
-	})
-
-	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		sess := session.MustFromContext(r.Context())
-		if sess.PendingDBSCRegistrationChallenge() == "" {
-			http.Error(w, "missing registration challenge on session", http.StatusBadRequest)
-			return
-		}
-
-		dbscIDBytes := make([]byte, 16)
-		if _, err := rand.Read(dbscIDBytes); err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		dbscID := hex.EncodeToString(dbscIDBytes)
-
-		if err := sess.CompleteDBSCRegistrationWithProof(r, dbscID); err != nil {
-			t.Logf("registration proof rejected: %v", err)
-			http.Error(w, "invalid registration proof", http.StatusUnauthorized)
-			return
-		}
-
-		origin := "https://" + r.Host
-		instructions := map[string]any{
-			"session_identifier": dbscID,
-			"refresh_url":        "/dbsc/refresh",
-			"scope": map[string]any{
-				"origin":        origin,
-				"include_site":  false,
-				"scope_specification": []any{},
-			},
-			"credentials": []map[string]string{{
-				"type":       "cookie",
-				"name":       "__Host-session-id",
-				"attributes": "Path=/; Secure; HttpOnly; SameSite=Lax",
-			}},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		enc := json.NewEncoder(w)
-		enc.SetEscapeHTML(false)
-		if err := enc.Encode(instructions); err != nil {
-			t.Errorf("encode session instructions: %v", err)
 		}
 	})
 
@@ -214,8 +168,9 @@ func TestDBSC_E2E(t *testing.T) {
 func TestLoginResponseIncludesSecureSessionRegistration(t *testing.T) {
 	kv := &memoryKV{data: make(map[string][]byte)}
 	mgr, err := session.NewKVManager(kv, &session.ManagerOpts{
-		IdleTimeout:         time.Hour,
-		DBSCRefreshInterval: 5 * time.Minute,
+		IdleTimeout:            time.Hour,
+		DBSCRefreshInterval:    5 * time.Minute,
+		DBSCRegistrationPath:   "/register",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +179,6 @@ func TestLoginResponseIncludesSecureSessionRegistration(t *testing.T) {
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		s := session.MustFromContext(r.Context())
 		s.Set("u", 1)
-		s.InitiateDBSCRegistration(w, "/register")
 		w.Write([]byte("ok"))
 	})
 	ts := httptest.NewTLSServer(mgr.Wrap(mux))
