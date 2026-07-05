@@ -15,7 +15,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"lds.li/web/internal/ctxkeys"
-	"lds.li/web/session"
 	"lds.li/web/static"
 )
 
@@ -26,13 +25,9 @@ func TestTemplateFuncs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, _ := session.TestContext(t.Context(), nil)
-	ctx = ctxkeys.ContextWithStaticHandler(ctx, sh)
+	ctx := ctxkeys.ContextWithStaticHandler(t.Context(), sh)
 
 	tmpl, err := template.New("test").Funcs(TemplateFuncs(ctx, nil)).Parse(`{{define "test"}}
-HasFlash: {{HasFlash}}
-FlashIsError: {{FlashIsError}}
-FlashMessage: {{FlashMessage}}
 StaticPath: {{StaticPath "subdir/file2.txt"}}
 ScriptNonceAttr: {{ScriptNonceAttr}}
 {{end}}`)
@@ -42,9 +37,8 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 
 	base, _ := url.Parse("https://example.com")
 	svr, err := NewServer(&Config{
-		BaseURL: base,
-		// Templates:      tmpl,
-		Static:      sfs, // TODO
+		BaseURL:     base,
+		Static:      sfs,
 		ScriptNonce: true,
 	})
 	if err != nil {
@@ -58,80 +52,35 @@ ScriptNonceAttr: {{ScriptNonceAttr}}
 		})
 	}))
 
-	tests := []struct {
-		name    string
-		session func(*session.Session) *session.Session
-		want    string
-	}{
-		{
-			name: "empty session",
-			want: `
-HasFlash: false
-FlashIsError: false
-FlashMessage:
-StaticPath: /static/subdir/file2.687830f0.txt
-ScriptNonceAttr: %s
-`,
-		},
-		{
-			name: "flash error",
-			session: func(s *session.Session) *session.Session {
-				s.SetFlashError("an error occurred")
-				return s
-			},
-			want: `
-		HasFlash: true
-		FlashIsError: true
-		FlashMessage: an error occurred
-		StaticPath: /static/subdir/file2.687830f0.txt
-		ScriptNonceAttr: %s
-		`,
-		},
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+
+	rr := httptest.NewRecorder()
+	svr.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("want status %d, got %d", http.StatusOK, rr.Code)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
-			// Add Sec-Fetch headers for our new protection
-			req.Header.Set("Sec-Fetch-Site", "same-origin")
-			req.Header.Set("Sec-Fetch-Mode", "navigate")
-			req.Header.Set("Sec-Fetch-Dest", "document")
+	re := regexp.MustCompile(`(?m)^ScriptNonceAttr:\s*(\S+)`)
+	matches := re.FindStringSubmatch(rr.Body.String())
+	if len(matches) != 2 {
+		t.Fatal("could not find script nonce value in response")
+	}
+	scriptNonce := matches[1]
 
-			var s *session.Session
-			if tt.session != nil {
-				s = tt.session(&session.Session{})
-			}
+	want := fmt.Sprintf(`
+StaticPath: /static/subdir/file2.687830f0.txt
+ScriptNonceAttr: %s
+`, scriptNonce)
 
-			ctx, _ := session.TestContext(req.Context(), s)
-			req = req.WithContext(ctx)
-
-			rr := httptest.NewRecorder()
-			svr.ServeHTTP(rr, req)
-
-			if rr.Code != http.StatusOK {
-				t.Errorf("want status %d, got %d", http.StatusOK, rr.Code)
-			}
-
-			t.Logf("body: %s", rr.Body.String())
-
-			// Now we only need to extract the script nonce
-			re := regexp.MustCompile(`(?m)^ScriptNonceAttr:\s*(\S+)`)
-			matches := re.FindStringSubmatch(rr.Body.String())
-			if len(matches) != 2 {
-				t.Fatal("could not find script nonce value in response")
-			}
-			scriptNonce := matches[1]
-
-			// Only one formatting placeholder for the script nonce
-			want := fmt.Sprintf(tt.want, scriptNonce)
-
-			if diff := cmp.Diff(
-				strings.Split(cleanString(want), "\n"),
-				strings.Split(cleanString(rr.Body.String()), "\n"),
-			); diff != "" {
-				t.Error(diff)
-			}
-		})
+	if diff := cmp.Diff(
+		strings.Split(cleanString(want), "\n"),
+		strings.Split(cleanString(rr.Body.String()), "\n"),
+	); diff != "" {
+		t.Error(diff)
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	"lds.li/web/middleware"
 	"lds.li/web/requestid"
 	"lds.li/web/requestlog"
-	"lds.li/web/session"
 	"lds.li/web/static"
 )
 
@@ -25,7 +24,6 @@ const (
 	MiddlewareCSRFName        = "csrf"
 	MiddlewareRequestIDName   = "requestid"
 	MiddlewareRequestLogName  = "requestlog"
-	MiddlewareSessionName     = "session"
 	MiddlewareErrorName       = "error"
 	MiddlewareStaticName      = "static"
 	MiddlewareBaseHeadersName = "baseheaders"
@@ -48,11 +46,10 @@ func NoopHandler(h http.Handler) http.Handler {
 }
 
 type Config struct {
-	BaseURL        *url.URL
-	SessionManager *session.Manager
-	ErrorHandler   func(w http.ResponseWriter, r *http.Request, err error)
-	Static         fs.FS
-	CSPOpts        []csp.HandlerOpt
+	BaseURL      *url.URL
+	ErrorHandler func(w http.ResponseWriter, r *http.Request, err error)
+	Static       fs.FS
+	CSPOpts      []csp.HandlerOpt
 	// ScriptNonce indicates that a nonce should be used for inline scripts.
 	// This will update the CSP, and the template func will return a value.
 	ScriptNonce bool
@@ -120,9 +117,6 @@ func NewServer(c *Config) (*Server, error) {
 	})
 	svr.BrowserMiddleware.Append(MiddlewareCSPName, cspHandler.Wrap)
 	svr.BrowserMiddleware.Append(MiddlewareCSRFName, csrfHandler)
-	if c.SessionManager != nil {
-		svr.BrowserMiddleware.Append(MiddlewareSessionName, c.SessionManager.Wrap)
-	}
 
 	svr.RawMux.Handle("/static/", svr.staticHandler)
 

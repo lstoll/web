@@ -11,7 +11,7 @@ on:
 
 jobs:
 
-  session:
+  core:
     name: Core
     runs-on: ubuntu-latest
     steps:
@@ -23,60 +23,6 @@ jobs:
       - name: Test
         run: |
           go test -race ./...
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: latest
-
-  sessionstoree2e:
-    name: Session Store E2E
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: session/storee2e
-    services:
-      postgres:
-        image: postgres:latest
-        env:
-          POSTGRES_DB: test_db
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-      mysql:
-        image: mysql:8
-        env:
-          MYSQL_DATABASE: test_db
-          MYSQL_USER: test_user
-          MYSQL_PASSWORD: test_password
-          MYSQL_ROOT_PASSWORD: root_password
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -proot_password"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-
-      - name: Construct Database URLs
-        run: |
-          echo "WEB_TEST_POSTGRESQL_URL=postgres://test_user:test_password@localhost:5432/test_db" >> $GITHUB_ENV
-          echo "WEB_TEST_MYSQL_URL=test_user:test_password@tcp(localhost:3306)/test_db?tls=skip-verify" >> $GITHUB_ENV
-
-      - name: Test
-        run: |
-          go test ./...
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7

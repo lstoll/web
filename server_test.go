@@ -13,16 +13,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"lds.li/web/csp"
-	"lds.li/web/session"
 )
 
 func TestServer(t *testing.T) {
 	base, _ := url.Parse("https://example.com")
-
-	sm, err := session.NewKVManager(session.NewMemoryKV(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	tmpl, err := template.New("test").Parse(`<!DOCTYPE html>Hello, {{.}}!`)
 	if err != nil {
@@ -39,9 +33,8 @@ func TestServer(t *testing.T) {
 			csp.FontSrc(`'self'`),
 			csp.BaseURI(`'self'`),
 			csp.FrameAncestors(`'none'`)},
-		BaseURL:        base,
-		SessionManager: sm,
-		Static:         os.DirFS("static/testdata"),
+		BaseURL: base,
+		Static:  os.DirFS("static/testdata"),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -10,25 +10,16 @@ import (
 
 	"lds.li/web"
 	"lds.li/web/internal/ctxkeys"
-	"lds.li/web/session"
 	"lds.li/web/static"
 )
 
 type requestOpts struct {
-	sessionValues map[string]any
 	jsonBody      any
 	staticContent fs.FS
 	staticPrefix  string
 }
 
 type RequestOpt func(opts *requestOpts) error
-
-func RequestWithSessionValues(values map[string]any) RequestOpt {
-	return func(opts *requestOpts) error {
-		opts.sessionValues = values
-		return nil
-	}
-}
 
 func RequestWithJSONBody(body any) RequestOpt {
 	return func(opts *requestOpts) error {
@@ -76,15 +67,7 @@ func NewRequest(method string, url string, opts ...RequestOpt) *web.Request {
 		r = r.WithContext(ctxkeys.ContextWithStaticHandler(r.Context(), sh))
 	}
 
-	ctx, _ := session.TestContext(r.Context(), nil)
-
-	wr := web.NewRequestFrom(r.WithContext(ctx))
-
-	if ropts.sessionValues != nil {
-		for k, v := range ropts.sessionValues {
-			wr.Session().Set(k, v)
-		}
-	}
+	wr := web.NewRequestFrom(r)
 
 	return wr
 }

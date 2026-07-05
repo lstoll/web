@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"lds.li/web/form"
-	"lds.li/web/session"
 )
 
 type Request struct {
@@ -17,11 +16,6 @@ type Request struct {
 
 func NewRequestFrom(r *http.Request) *Request {
 	return &Request{r: r}
-}
-
-// Session returns the session associated with this request.
-func (b *Request) Session() *session.Session {
-	return session.MustFromContext(b.r.Context())
 }
 
 func (b *Request) PostForm() url.Values {
