@@ -136,6 +136,86 @@ func TestServer(t *testing.T) {
 	}
 }
 
+func TestDefaultTemplates(t *testing.T) {
+	base, _ := url.Parse("https://example.com")
+
+	tmpl, err := template.New("test").Parse(`<!DOCTYPE html>Default: {{.}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svr, err := NewServer(&Config{
+		BaseURL:   base,
+		Static:    os.DirFS("static/testdata"),
+		Templates: tmpl,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(br, &TemplateResponse{
+			Name: "test",
+			Data: "world",
+		})
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+
+	rr := httptest.NewRecorder()
+	svr.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("want status %d, got %d", http.StatusOK, rr.Code)
+	}
+	if rr.Body.String() != "<!DOCTYPE html>Default: world" {
+		t.Errorf("want body %q, got %q", "<!DOCTYPE html>Default: world", rr.Body.String())
+	}
+}
+
+func TestTemplateResponseCode(t *testing.T) {
+	base, _ := url.Parse("https://example.com")
+
+	tmpl, err := template.New("test").Parse(`{{define "missing"}}<p>not found</p>{{end}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svr, err := NewServer(&Config{
+		BaseURL:   base,
+		Static:    os.DirFS("static/testdata"),
+		Templates: tmpl,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svr.Handle("/missing", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(br, &TemplateResponse{
+			Name: "missing",
+			Code: http.StatusNotFound,
+		})
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+
+	rr := httptest.NewRecorder()
+	svr.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("want status %d, got %d", http.StatusNotFound, rr.Code)
+	}
+	if rr.Body.String() != "<p>not found</p>" {
+		t.Errorf("want body %q, got %q", "<p>not found</p>", rr.Body.String())
+	}
+}
+
 func TestAdditionalBrowserMiddleware(t *testing.T) {
 	base, _ := url.Parse("https://example.com")
 

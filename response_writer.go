@@ -4,16 +4,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 
 	"lds.li/web/internal"
 )
 
-// NewResponseWriter creates a new ResponseWriter
+// NewResponseWriter creates a new ResponseWriter.
 func NewResponseWriter(w http.ResponseWriter) ResponseWriter {
+	return newResponseWriter(w, nil)
+}
+
+func newResponseWriter(w http.ResponseWriter, defaultTemplates *template.Template) ResponseWriter {
 	return &responseWriter{
-		ResponseWriter: w,
+		ResponseWriter:   w,
+		defaultTemplates: defaultTemplates,
 	}
 }
 
@@ -29,7 +35,8 @@ var (
 
 type responseWriter struct {
 	http.ResponseWriter
-	handled bool
+	handled          bool
+	defaultTemplates *template.Template
 }
 
 func (w *responseWriter) WriteResponse(r *Request, resp BrowserResponse) error {
@@ -64,7 +71,14 @@ func (w *responseWriter) Unwrap() http.ResponseWriter {
 }
 
 func (w *responseWriter) writeTemplateResponse(req *Request, resp *TemplateResponse) error {
-	t := resp.Templates.Funcs(TemplateFuncs(req.r.Context(), resp.Funcs))
+	t := resp.Templates
+	if t == nil {
+		t = w.defaultTemplates
+	}
+	if t == nil {
+		return fmt.Errorf("template response: no templates configured")
+	}
+	t = t.Funcs(TemplateFuncs(req.r.Context(), resp.Funcs))
 
 	// Buffer the render to capture errors before writing
 	var buf bytes.Buffer
@@ -72,6 +86,13 @@ func (w *responseWriter) writeTemplateResponse(req *Request, resp *TemplateRespo
 	if err != nil {
 		return err
 	}
+
+	code := resp.Code
+	if code == 0 {
+		code = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
 
 	_, err = io.Copy(w, &buf)
 	return err

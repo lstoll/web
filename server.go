@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"html/template"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -59,6 +60,9 @@ type Config struct {
 	// AdditionalBrowserMiddleware is a set of middleware that will be added to
 	// all browser handlers, after the base middleware.
 	AdditionalBrowserMiddleware []func(http.Handler) http.Handler
+	// Templates is the default template set used when TemplateResponse.Templates
+	// is nil.
+	Templates *template.Template
 
 	/* start new section */
 	CSRFHandler func(http.Handler) http.Handler
@@ -123,6 +127,8 @@ func NewServer(c *Config) (*Server, error) {
 
 	svr.RawMux.Handle("/static/", svr.staticHandler)
 
+	svr.defaultTemplates = c.Templates
+
 	return svr, nil
 }
 
@@ -136,8 +142,9 @@ type Server struct {
 
 	HTTPServer *http.Server
 
-	config        *Config
-	staticHandler *static.FileHandler
+	config           *Config
+	staticHandler    *static.FileHandler
+	defaultTemplates *template.Template
 }
 
 func (s *Server) HandleRaw(pattern string, handler http.Handler) {
@@ -149,7 +156,7 @@ func (s *Server) Handle(pattern string, h http.Handler, opts ...HandlerOpt) {
 		for _, opt := range opts {
 			r = opt(r)
 		}
-		h.ServeHTTP(NewResponseWriter(w), r)
+		h.ServeHTTP(newResponseWriter(w, s.defaultTemplates), r)
 	}))
 }
 

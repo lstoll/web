@@ -30,6 +30,8 @@ type NilResponse struct {
 type TemplateResponse struct {
 	CommonResponse
 	Name string
+	// Code for the response. If not set, http.StatusOK (200) will be used.
+	Code int
 	// Funcs are additional functions merged in to the rendered template.
 	Funcs template.FuncMap
 	// Templates to render response from. If not set, the configured templates
