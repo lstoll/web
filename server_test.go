@@ -136,6 +136,74 @@ func TestServer(t *testing.T) {
 	}
 }
 
+func TestPathValue(t *testing.T) {
+	base, _ := url.Parse("https://example.com")
+
+	svr, err := NewServer(&Config{
+		BaseURL: base,
+		Static:  os.DirFS("static/testdata"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svr.Handle("GET /work/{name}", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(br, &JSONResponse{
+			Data: struct {
+				Name    string `json:"name"`
+				Pattern string `json:"pattern"`
+			}{
+				Name:    br.PathValue("name"),
+				Pattern: br.RawRequest().Pattern,
+			},
+		})
+	}))
+
+	svr.HandleRaw("GET /api/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"id":%q,"pattern":%q}`, r.PathValue("id"), r.Pattern)
+	}))
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "browser handler",
+			path:       "/work/foo",
+			wantStatus: http.StatusOK,
+			wantBody:   `{"name":"foo","pattern":"GET /work/{name}"}` + "\n",
+		},
+		{
+			name:       "raw handler",
+			path:       "/api/42",
+			wantStatus: http.StatusOK,
+			wantBody:   `{"id":"42","pattern":"GET /api/{id}"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			req.Header.Set("Sec-Fetch-Mode", "navigate")
+			req.Header.Set("Sec-Fetch-Dest", "document")
+
+			rr := httptest.NewRecorder()
+			svr.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("want status %d, got %d", tt.wantStatus, rr.Code)
+			}
+			if rr.Body.String() != tt.wantBody {
+				t.Errorf("want body %q, got %q", tt.wantBody, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestCompareSpecificity(t *testing.T) {
 	testCases := []struct {
 		name string

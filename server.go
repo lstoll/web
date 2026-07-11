@@ -155,25 +155,25 @@ func (s *Server) HandleFunc(pattern string, h func(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	bh, bp := s.BrowserMux.Handler(r)
-	rh, rp := s.RawMux.Handler(r)
+	_, bp := s.BrowserMux.Handler(r)
+	_, rp := s.RawMux.Handler(r)
 
 	switch {
 	case bp != "" && rp == "":
 		// browser path only
-		s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(bh)).ServeHTTP(w, r)
+		s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(s.BrowserMux)).ServeHTTP(w, r)
 		return
 	case bp == "" && rp != "":
 		// raw path only
-		s.BaseMiddleware.Handler(rh).ServeHTTP(w, r)
+		s.BaseMiddleware.Handler(s.RawMux).ServeHTTP(w, r)
 		return
 	case bp != "" && rp != "":
 		switch compareSpecificity(bp, rp, r) {
 		case 1:
-			s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(bh)).ServeHTTP(w, r)
+			s.BaseMiddleware.Handler(s.BrowserMiddleware.Handler(s.BrowserMux)).ServeHTTP(w, r)
 			return
 		case -1:
-			s.BaseMiddleware.Handler(rh).ServeHTTP(w, r)
+			s.BaseMiddleware.Handler(s.RawMux).ServeHTTP(w, r)
 			return
 		default:
 			// TODO - error handler for this too?
