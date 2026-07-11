@@ -9,25 +9,18 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"lds.li/web/internal/ctxkeys"
-	"lds.li/web/static"
 )
 
 func TestTemplateFuncs(t *testing.T) {
 	sfs := os.DirFS("static/testdata")
-	sh, err := static.NewFileHandler(sfs, "/static")
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	ctx := ctxkeys.ContextWithStaticHandler(t.Context(), sh)
-
-	tmpl, err := template.New("test").Funcs(TemplateFuncs(ctx, nil)).Parse(`{{define "test"}}
+	tmpl, err := template.New("test").Funcs(TemplateFuncStubs()).Parse(`{{define "test"}}
 StaticPath: {{StaticPath "subdir/file2.txt"}}
 ScriptNonceAttr: {{ScriptNonceAttr}}
 {{end}}`)
@@ -94,4 +87,27 @@ func cleanString(input string) string {
 	decoded := html.UnescapeString(trimmed)
 
 	return decoded
+}
+
+func TestTemplateFuncStubs(t *testing.T) {
+	_, err := template.New("page").Funcs(TemplateFuncStubs()).Parse(
+		`{{StaticPath "app.css"}} {{ScriptNonceAttr}} {{StyleNonceAttr}}`,
+	)
+	if err != nil {
+		t.Fatalf("parse with stubs: %v", err)
+	}
+
+	dir := t.TempDir()
+	const name = "page.html"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(`{{StaticPath "app.css"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tmpl, err := ParseTemplates(os.DirFS(dir), name)
+	if err != nil {
+		t.Fatalf("ParseTemplates: %v", err)
+	}
+	if tmpl.Lookup(name) == nil {
+		t.Fatalf("expected %q template to be parsed", name)
+	}
 }
