@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -112,13 +113,16 @@ func (h *Handler) Handle(next http.Handler) http.Handler {
 				} else {
 					DefaultErrorHandler(w, r, rw.err)
 				}
-			} else if rw.code >= 400 {
+			} else if rw.code >= 500 {
 				err := New(rw.code, rw.buffer.String())
 				if h.ErrorHandler != nil {
 					h.ErrorHandler.HandleError(w, r, err)
 				} else {
 					DefaultErrorHandler(w, r, err)
 				}
+			} else if rw.code >= 400 {
+				rw.ResponseWriter.WriteHeader(rw.code)
+				_, _ = io.Copy(rw.ResponseWriter, &rw.buffer)
 			}
 		}()
 

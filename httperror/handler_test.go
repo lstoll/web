@@ -80,12 +80,13 @@ func TestHandler(t *testing.T) {
 				http.Error(w, "not found", http.StatusNotFound)
 			}),
 			wantCode: http.StatusNotFound,
-			wantBody: "Not Found\n",
+			wantBody: "not found\n",
 		},
 		{
 			name: "custom error handler",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				http.Error(w, "bad request", http.StatusBadRequest)
+				erw := w.(ResponseWriter)
+				erw.WriteError(BadRequestErrf("invalid input"))
 			}),
 			errorHandler: ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 				w.WriteHeader(http.StatusTeapot)
