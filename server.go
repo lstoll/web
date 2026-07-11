@@ -117,6 +117,9 @@ func NewServer(c *Config) (*Server, error) {
 	})
 	svr.BrowserMiddleware.Append(MiddlewareCSPName, cspHandler.Wrap)
 	svr.BrowserMiddleware.Append(MiddlewareCSRFName, csrfHandler)
+	for i, mw := range c.AdditionalBrowserMiddleware {
+		svr.BrowserMiddleware.Append(fmt.Sprintf("additional-%d", i), mw)
+	}
 
 	svr.RawMux.Handle("/static/", svr.staticHandler)
 

@@ -136,6 +136,42 @@ func TestServer(t *testing.T) {
 	}
 }
 
+func TestAdditionalBrowserMiddleware(t *testing.T) {
+	base, _ := url.Parse("https://example.com")
+
+	svr, err := NewServer(&Config{
+		BaseURL: base,
+		Static:  os.DirFS("static/testdata"),
+		AdditionalBrowserMiddleware: []func(http.Handler) http.Handler{
+			func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("X-Test-Middleware", "ran")
+					next.ServeHTTP(w, r)
+				})
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svr.Handle("/test", BrowserHandlerFunc(func(ctx context.Context, rw ResponseWriter, br *Request) error {
+		return rw.WriteResponse(br, &JSONResponse{Data: "ok"})
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+
+	rr := httptest.NewRecorder()
+	svr.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("X-Test-Middleware"); got != "ran" {
+		t.Errorf("X-Test-Middleware = %q, want %q", got, "ran")
+	}
+}
+
 func TestPathValue(t *testing.T) {
 	base, _ := url.Parse("https://example.com")
 
